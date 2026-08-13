@@ -1,0 +1,13 @@
+{
+    "name": "submit",
+    "title": "提交网站收录",
+    "version": "1.2",
+    "author": "懒人导航",
+    "description": "前台提交网站入口、提交表单、审核流程控制，支持后台自定义收录规则和审核开关。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "schema_file": "schema.php",
+    "hooks": ["search_bar_after"],
+    "builtin": true,
+    "enabled": "0"
+}

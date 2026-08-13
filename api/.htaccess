@@ -1,0 +1,21 @@
+# API 目录路由
+RewriteEngine On
+
+# 根路径 /api/ 保留查询参数，直接访问 index.php
+DirectoryIndex index.php
+
+# /api/{endpoint} 也支持 RESTful 风格（支持多级路径，如 open/sites）
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^([a-z0-9\-/]+)/?$ index.php?endpoint=$1 [QSA,L]
+
+# 安全：禁止直接访问其他 PHP 文件（仅允许 index.php 通过路由访问）
+<FilesMatch "^(?!index\.php$).*\.php$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order deny,allow
+    Deny from all
+  </IfModule>
+</FilesMatch>

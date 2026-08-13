@@ -1,0 +1,13 @@
+{
+    "name": "sitemap",
+    "title": "网站地图",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "生成标准 XML Sitemap 和 robots.txt，支持自动缓存、手动生成、分片模式，收录首页、分类页、站点详情页和文章页。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "schema_file": "schema.php",
+    "hooks": ["admin_settings_nav", "admin_settings_tabs"],
+    "builtin": true,
+    "enabled": "0"
+}

@@ -1,0 +1,13 @@
+{
+    "name": "article",
+    "title": "文章发布",
+    "version": "1.3",
+    "author": "懒人导航",
+    "description": "后台文章管理，前台显示文章列表和详情。支持 Markdown/HTML 内容、分类、标签。",
+    "main_file": "include.php",
+    "hooks": ["sidebar_bottom", "before_footer"],
+    "tables": ["articles"],
+    "schema_file": "schema.php",
+    "builtin": true,
+    "enabled": "0"
+}

@@ -1,0 +1,13 @@
+{
+    "name": "spider",
+    "title": "蜘蛛来访",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "统计各大搜索引擎蜘蛛来访记录，支持按引擎开关、趋势图表、今日/昨日/近7日/近30日数据汇总，数据自动保留30天。",
+    "main_file": "include.php",
+    "hooks": ["before_header", "admin_sidebar"],
+    "tables": ["spider_visits"],
+    "schema_file": "schema.php",
+    "builtin": true,
+    "enabled": "0"
+}

@@ -1,0 +1,11 @@
+{
+    "name": "lightbox",
+    "title": "图片灯箱",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "站点详情页图片点击放大，自动给图片加 data-lightbox 属性。内置轻量灯箱实现，无需外部依赖。",
+    "main_file": "include.php",
+    "hooks": ["after_footer"],
+    "builtin": true,
+    "enabled": "0"
+}

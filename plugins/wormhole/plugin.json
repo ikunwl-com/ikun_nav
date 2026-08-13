@@ -1,0 +1,14 @@
+{
+    "name": "wormhole",
+    "title": "虫洞联盟",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "联盟站点互访统计、虫洞入口显示、随机跳转传送。管理页面包含成员管理、联盟设置、检测脚本、黑名单管理。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "hooks": ["sidebar_bottom", "admin_sidebar"],
+    "tables": ["blacklist"],
+    "schema_file": "schema.php",
+    "builtin": true,
+    "enabled": "0"
+}

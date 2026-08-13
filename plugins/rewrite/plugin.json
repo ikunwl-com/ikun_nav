@@ -1,0 +1,13 @@
+{
+    "name": "rewrite",
+    "title": "伪静态设置",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "URL 伪静态模式配置，支持动态模式和伪静态模式，可自定义各页面 URL 格式并自动生成 Apache/Nginx 规则。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "schema_file": "schema.php",
+    "hooks": ["admin_settings_nav", "admin_settings_tabs"],
+    "builtin": true,
+    "enabled": "0"
+}

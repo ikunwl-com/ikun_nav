@@ -1,0 +1,9 @@
+{
+  "name": "default",
+  "title": "默认主题",
+  "version": "1.0",
+  "author": "懒人导航",
+  "description": "懒人导航默认主题，现代简洁设计风格，支持响应式布局",
+  "preview": "",
+  "support": ["index", "category", "site", "search", "submit"]
+}

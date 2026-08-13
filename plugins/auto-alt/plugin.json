@@ -1,0 +1,11 @@
+{
+    "name": "auto-alt",
+    "title": "图片自动ALT",
+    "version": "1.1",
+    "author": "懒人导航",
+    "description": "自动给没有 alt 属性的 <img> 标签补填站点名称或描述，提升 SEO 和无障碍访问。",
+    "main_file": "include.php",
+    "hooks": ["after_footer"],
+    "builtin": true,
+    "enabled": "0"
+}

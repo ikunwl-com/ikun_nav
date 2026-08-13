@@ -1,0 +1,13 @@
+{
+    "name": "ad",
+    "title": "广告管理",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "后台可配置广告位 HTML 代码，支持在首页列表前/后、侧边栏顶部/底部、站点详情内容前/后等位置投放广告。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "schema_file": "schema.php",
+    "hooks": ["site_list_before", "site_list_after", "sidebar_top", "sidebar_bottom", "before_content", "after_content"],
+    "builtin": true,
+    "enabled": "0"
+}

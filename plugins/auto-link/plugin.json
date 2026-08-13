@@ -1,0 +1,15 @@
+{
+    "name": "auto-link",
+    "title": "友链自动收录",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "检测 Referer 来源，验证对方是否挂了本站友链，通过后自动收录。从现有 AutoLinkModel 功能拆分为插件。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "config_tab": "autolink",
+    "hooks": ["after_footer"],
+    "tables": ["blacklist"],
+    "schema_file": "schema.php",
+    "builtin": true,
+    "enabled": "0"
+}

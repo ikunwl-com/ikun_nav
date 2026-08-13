@@ -1,0 +1,13 @@
+{
+    "name": "friendlink",
+    "title": "友情链接",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "友情链接管理插件，后台弹窗快速添加友链（名称+链接+class+ico），前台底部展示友链，支持自定义CSS类名和图标，填写则显示不填则不显示。",
+    "main_file": "include.php",
+    "hooks": ["before_footer", "after_footer", "admin_sidebar"],
+    "tables": ["friendlinks"],
+    "schema_file": "schema.php",
+    "builtin": true,
+    "enabled": "0"
+}
