@@ -29,10 +29,14 @@ if ($isPost) {
         switch ($action) {
             case 'approve':
                 Database::execute("UPDATE " . table('sites') . " SET status='published' WHERE id=?", [$id]);
+                $siteInfo = Database::queryOne("SELECT submit_email FROM " . table('sites') . " WHERE id=?", [$id]);
+                Plugin::hook('site_approved', [['id' => $id, 'submit_email' => isset($siteInfo['submit_email']) ? $siteInfo['submit_email'] : '']]);
                 redirect('/admin/review.php?msg=approved');
                 break;
             case 'reject':
                 Database::execute("UPDATE " . table('sites') . " SET status='rejected' WHERE id=?", [$id]);
+                $siteInfo = Database::queryOne("SELECT submit_email FROM " . table('sites') . " WHERE id=?", [$id]);
+                Plugin::hook('site_rejected', [['id' => $id, 'submit_email' => isset($siteInfo['submit_email']) ? $siteInfo['submit_email'] : '']]);
                 redirect('/admin/review.php?msg=rejected');
                 break;
             case 'delete':
@@ -40,7 +44,9 @@ if ($isPost) {
                 redirect('/admin/review.php?msg=deleted');
                 break;
             case 'edit_approve':
+                $siteInfo = Database::queryOne("SELECT submit_email FROM " . table('sites') . " WHERE id=?", [$id]);
                 handleReviewEdit($catModel, $id);
+                Plugin::hook('site_approved', [['id' => $id, 'submit_email' => isset($siteInfo['submit_email']) ? $siteInfo['submit_email'] : '']]);
                 redirect('/admin/review.php?msg=approved');
                 break;
         }
@@ -55,9 +61,17 @@ if ($isPost) {
             switch ($batchAction) {
                 case 'approve':
                     Database::execute("UPDATE " . table('sites') . " SET status='published' WHERE id IN ($placeholders)", $idList);
+                    foreach ($idList as $bid) {
+                        $sInfo = Database::queryOne("SELECT submit_email FROM " . table('sites') . " WHERE id=?", [$bid]);
+                        Plugin::hook('site_approved', [['id' => $bid, 'submit_email' => isset($sInfo['submit_email']) ? $sInfo['submit_email'] : '']]);
+                    }
                     break;
                 case 'reject':
                     Database::execute("UPDATE " . table('sites') . " SET status='rejected' WHERE id IN ($placeholders)", $idList);
+                    foreach ($idList as $bid) {
+                        $sInfo = Database::queryOne("SELECT submit_email FROM " . table('sites') . " WHERE id=?", [$bid]);
+                        Plugin::hook('site_rejected', [['id' => $bid, 'submit_email' => isset($sInfo['submit_email']) ? $sInfo['submit_email'] : '']]);
+                    }
                     break;
                 case 'delete':
                     $siteModel = new SiteModel();
@@ -108,12 +122,13 @@ if ($msg) { adminAlert(getReviewMsg($msg), in_array($msg, ['error','csrf']) ? 'e
       <thead>
         <tr>
           <th width="30"><input type="checkbox" onclick="var el=this;document.querySelectorAll('.row-check').forEach(function(c){c.checked=el.checked})"></th>
-          <th>站点名称</th>
-          <th>URL</th>
-          <th>分类</th>
-          <th>权重</th>
-          <th>提交时间</th>
-          <th>操作</th>
+           <th>站点名称</th>
+           <th>URL</th>
+           <th>分类</th>
+           <th>权重</th>
+           <th>联系邮箱</th>
+           <th>提交时间</th>
+           <th>操作</th>
         </tr>
       </thead>
       <tbody>
@@ -146,6 +161,9 @@ if ($msg) { adminAlert(getReviewMsg($msg), in_array($msg, ['error','csrf']) ? 'e
               <span class="badge badge-info">PC<?= (int)$s['br_pc'] ?></span>
               <span class="badge badge-info">M<?= (int)$s['br_mobile'] ?></span>
             </div>
+          </td>
+          <td class="text-sm-dim">
+            <?= empty($s['submit_email']) ? '<span style="color:#ccc;">-</span>' : Security::e($s['submit_email']) ?>
           </td>
           <td class="text-sm-dim"><?= Security::e(formatDate($s['created_at'])) ?></td>
           <td class="actions">
@@ -208,15 +226,15 @@ function getReviewMsg($key) {
         'batch' => '批量操作完成',
         'csrf' => 'CSRF验证失败，请重试',
     ];
-    return $msgs[$key] ?? '';
+    return isset($msgs[$key]) ? $msgs[$key] : '';
 }
 
 function handleReviewEdit($catModel, $id) {
-    $name = Security::cleanString($_POST['name'] ?? '', 100);
-    $url = Security::cleanString($_POST['url'] ?? '', 500);
-    $categoryId = Security::int($_POST['category_id'] ?? 0);
-    $description = Security::cleanString($_POST['description'] ?? '', 200);
-    $tags = Security::cleanTags($_POST['tags'] ?? '');
+    $name = Security::cleanString(isset($_POST['name']) ? $_POST['name'] : '', 100);
+    $url = Security::cleanString(isset($_POST['url']) ? $_POST['url'] : '', 500);
+    $categoryId = Security::int(isset($_POST['category_id']) ? $_POST['category_id'] : 0);
+    $description = Security::cleanString(isset($_POST['description']) ? $_POST['description'] : '', 200);
+    $tags = Security::cleanTags(isset($_POST['tags']) ? $_POST['tags'] : '');
 
     if ($name && $url && $categoryId > 0) {
         $url = normalizeSiteUrl($url);

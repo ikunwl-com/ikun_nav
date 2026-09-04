@@ -85,20 +85,26 @@ if ($isCli) {
  * 执行虫洞联盟检测
  * @return array{checked: int, passed: int, failed: int, removed: int, details: array}
  */
-function runWormholeCheck(): array
+function runWormholeCheck(bool $forceAll = false): array
 {
     $wormhole = new WormholeModel();
     $siteUrl = getSiteUrl();
 
-    // 要检测的标识特征（对方网页中应包含以下任一）
+    // 要检测的标识特征（对方网页中应包含以下任一，且必须以本站 URL 为前缀，
+    // 与后台「嵌入代码」实际输出的片段保持一致，避免误判）
+    $base = rtrim($siteUrl, '/');
     $markers = [
-        $siteUrl . '/api/?endpoint=wormhole',     // HTML 展示 / PHP 引用
-        $siteUrl . '/api/?endpoint=wormhole.js',  // JS 嵌入
-        $siteUrl . '/api/?endpoint=wormhole-teleport', // 友链传送
-        'wormhole',                               // 通用关键词
+        $base . '/api/index.php?endpoint=wormhole.js',     // JS 嵌入（后台复制代码）
+        $base . '/api/?endpoint=wormhole.js',              // JS 嵌入（兼容旧格式）
+        $base . '/api/index.php?endpoint=wormhole',        // HTML 展示 / PHP 引用
+        $base . '/api/?endpoint=wormhole',                 // HTML 展示 / PHP 引用（兼容）
+        $base . '/api/index.php?endpoint=wormhole-teleport',
+        $base . '/api/?endpoint=wormhole-teleport',
+        $base . '/wormhole/teleport.php',                  // 友链传送 A 标签
+        $base . '/wormhole/',                              // 联盟页入口链接
     ];
 
-    $members = $wormhole->getAutoMembersForCheck();
+    $members = $wormhole->getAutoMembersForCheck($forceAll);
 
     $checked = 0;
     $passed = 0;
@@ -213,13 +219,13 @@ function fetchPageContent(string $url): ?string
     }
 
     if (!function_exists('curl_init')) {
-        // 无 cURL 时用 file_get_contents
+        // 无 cURL 时用 file_get_contents（跟随重定向，避免 http->https 等跳转误判）
         $ctx = stream_context_create([
             'http' => [
                 'timeout'       => 10,
                 'user_agent'    => 'LazyNavWormholeBot/1.0',
-                'follow_location' => 0,
-                'max_redirects' => 0,
+                'follow_location' => 1,
+                'max_redirects' => 3,
             ],
             'ssl' => [
                 'verify_peer'       => true,
@@ -227,6 +233,13 @@ function fetchPageContent(string $url): ?string
             ],
         ]);
         $html = @file_get_contents($url, false, $ctx);
+        if ($html === false) {
+            $errMsg = '';
+            if (isset($http_response_header) && is_array($http_response_header)) {
+                $errMsg = implode(' | ', array_slice($http_response_header, 0, 3));
+            }
+            whLog("抓取失败(无curl): {$url} " . ($errMsg ?: '无法连接'));
+        }
         return $html === false ? null : $html;
     }
 
@@ -238,7 +251,8 @@ function fetchPageContent(string $url): ?string
         CURLOPT_CONNECTTIMEOUT => 5,
         CURLOPT_SSL_VERIFYPEER => true,
         CURLOPT_SSL_VERIFYHOST => 2,
-        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS      => 3,
         CURLOPT_HTTPHEADER     => [
             'User-Agent: LazyNavWormholeBot/1.0',
             'Accept: text/html,application/xhtml+xml',
@@ -248,10 +262,21 @@ function fetchPageContent(string $url): ?string
     $html = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $error = curl_error($ch);
+    // 重定向后的最终 URL，需再次校验非内网地址（防 SSRF）
+    $effectiveUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     curl_close($ch);
 
     if ($error || $httpCode >= 400) {
+        whLog("抓取失败: {$url} 状态码={$httpCode} 错误=" . ($error ?: '无') . " 最终URL=" . ($effectiveUrl ?: '-'));
         return null;
+    }
+
+    if ($effectiveUrl) {
+        $finalDomain = Security::extractDomain($effectiveUrl);
+        if (empty($finalDomain) || Security::isInternalHost($finalDomain)) {
+            whLog("抓取失败: {$url} 重定向到内网地址 {$effectiveUrl}（已拦截）");
+            return null;
+        }
     }
 
     return $html ?: null;

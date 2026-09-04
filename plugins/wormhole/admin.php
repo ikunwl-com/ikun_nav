@@ -180,10 +180,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             case 'check_all':
                 $redirectTab = 'check';
-                require_once __DIR__ . '/../core/cron_wormhole_check.php';
-                $removed = $wormhole->removeFailedMembers();
-                $redirectMsg = '全量检测完成，已清理 ' . (int)$removed . ' 个失效成员';
-                Logger::log('admin_wormhole', "全量检测 admin_id={$adminId} IP={$ip} 清理失效成员={$removed}");
+                // 真正执行检测（复用 CLI 脚本核心逻辑），而非仅清理旧失败记录
+                require_once __DIR__ . '/../../core/cron_wormhole_check.php';
+                @set_time_limit(300); // 防止成员较多时超时
+                try {
+                    if (function_exists('runWormholeCheck')) {
+                        $result = runWormholeCheck(true); // 全量：忽略 24h 间隔，检测所有 auto 成员
+                        $redirectMsg = '全量检测完成：检测' . (int)($result['checked'] ?? 0)
+                            . '个，通过' . (int)($result['passed'] ?? 0)
+                            . '个，失败' . (int)($result['failed'] ?? 0)
+                            . '个，移出' . (int)($result['removed'] ?? 0) . '个';
+
+                        // 保存本次检测明细（含失败站点与原因），供「检测脚本」Tab 展示
+                        $_SESSION['wormhole_check_result'] = [
+                            'time'    => date('Y-m-d H:i:s'),
+                            'checked' => (int)($result['checked'] ?? 0),
+                            'passed'  => (int)($result['passed'] ?? 0),
+                            'failed'  => (int)($result['failed'] ?? 0),
+                            'removed' => (int)($result['removed'] ?? 0),
+                            'details' => $result['details'] ?? [],
+                        ];
+
+                        // 失败站点单独写日志，便于追查
+                        foreach (($result['details'] ?? []) as $d) {
+                            if (($d['result'] ?? '') !== 'pass') {
+                                Logger::log('admin_wormhole', "检测未通过 name={$d['name']} url={$d['url']} reason={$d['result']} 累计失败={$d['fails']}");
+                            }
+                        }
+                    } else {
+                        $removed = $wormhole->removeFailedMembers();
+                        $redirectMsg = '检测脚本不可用，已清理 ' . (int)$removed . ' 个失效成员';
+                    }
+                } catch (Throwable $e) {
+                    $redirectType = 'error';
+                    $redirectMsg = '全量检测失败：' . $e->getMessage();
+                    Logger::log('admin_wormhole', "全量检测异常 admin_id={$adminId} IP={$ip} " . $e->getMessage());
+                }
+                Logger::log('admin_wormhole', "全量检测 admin_id={$adminId} IP={$ip} {$redirectMsg}");
+                break;
+
+            case 'clear_check_result':
+                $redirectTab = 'check';
+                unset($_SESSION['wormhole_check_result']);
+                $redirectMsg = '已清除最近一次检测结果';
                 break;
         }
     }
@@ -219,6 +258,9 @@ $search = trim($_GET['search'] ?? '');
 $page = max(1, (int)($_GET['page'] ?? 1));
 $blStats = $blacklist->getStats();
 $blList = $blacklist->getAll($filterType, $search, $page, 20);
+
+// 最近一次检测结果（由 check_all 写入 session，含失败站点明细）
+$checkResult = $_SESSION['wormhole_check_result'] ?? null;
 
 // 嵌入代码
 $siteUrl = getSiteUrl();
@@ -317,9 +359,9 @@ if ($msg) { adminAlert($msg, $msgType); }
             $displayMembers = $tab === 'pending' ? $wormhole->getMembers('pending') : $wormhole->getMembers();
             ?>
             <div class="flex-p-gap-b500">
-                <a href="?tab=members&subtab=all" class="btn btn-sm <?= $tab === 'all' ? 'btn-primary' : 'btn-ghost' ?> rounded-top-6">已审核</a>
+                <a href="/admin/plugin.php?p=wormhole&tab=members&subtab=all" class="btn btn-sm <?= $tab === 'all' ? 'btn-primary' : 'btn-ghost' ?> rounded-top-6">已审核</a>
                 <?php if ((int)$stats['pending_count'] > 0): ?>
-                <a href="?tab=members&subtab=pending" class="btn btn-sm <?= $tab === 'pending' ? 'btn-primary' : 'btn-ghost' ?> flex-center-gap-bbea">
+                <a href="/admin/plugin.php?p=wormhole&tab=members&subtab=pending" class="btn btn-sm <?= $tab === 'pending' ? 'btn-primary' : 'btn-ghost' ?> flex-center-gap-bbea">
                     待审核
                     <span class="badge badge-danger text-p-8470"><?= (int)$stats['pending_count'] ?></span>
                 </a>
@@ -443,8 +485,9 @@ if ($msg) { adminAlert($msg, $msgType); }
                     <span class="card-title"><i class="ti ti-plus"></i> 添加站点</span>
                 </div>
                 <div class="p-16">
-                    <form method="GET" class="flex-mb-gap-e274">
+                    <form method="GET" class="flex-mb-gap-e274" action="/admin/plugin.php?p=wormhole&tab=members">
                         <input type="text" name="q" value="<?= Security::eAttr($_GET['q'] ?? '') ?>" placeholder="搜索站点名称或域名..." class="form-input flex-1">
+                        <input type="hidden" name="p" value="wormhole">
                         <input type="hidden" name="tab" value="members">
                         <button type="submit" class="btn btn-primary"><i class="ti ti-search"></i> 搜索</button>
                     </form>
@@ -609,6 +652,85 @@ if ($msg) { adminAlert($msg, $msgType); }
             </form>
         </div>
     </div>
+
+    <?php if (is_array($checkResult) && !empty($checkResult)): ?>
+    <div class="card mt-20">
+        <div class="card-header flex-between-center">
+            <span class="card-title">
+                <i class="ti ti-report"></i> 最近一次检测结果
+                <?php if (!empty($checkResult['time'])): ?>
+                <span class="text-xs-dim-3" style="font-weight:400;margin-left:8px;"><?= Security::e($checkResult['time']) ?></span>
+                <?php endif; ?>
+            </span>
+            <form method="POST" class="m-0">
+                <input type="hidden" name="csrf_token" value="<?= Security::eAttr($_SESSION['csrf_token'] ?? '') ?>">
+                <input type="hidden" name="action" value="clear_check_result">
+                <button type="submit" class="btn btn-sm btn-ghost"><i class="ti ti-x"></i> 清除结果</button>
+            </form>
+        </div>
+        <div class="p-16">
+            <p class="mb-12">
+                检测 <?= (int)($checkResult['checked'] ?? 0) ?> 个 ·
+                通过 <?= (int)($checkResult['passed'] ?? 0) ?> 个 ·
+                <span style="color:#dc2626;">失败 <?= (int)($checkResult['failed'] ?? 0) ?> 个</span> ·
+                移出 <?= (int)($checkResult['removed'] ?? 0) ?> 个
+            </p>
+
+            <?php if (!empty($checkResult['details'])): ?>
+            <table class="table" style="width:100%;border-collapse:collapse;font-size:13px;">
+                <thead>
+                    <tr style="background:#f8f9fa;">
+                        <th style="padding:8px 10px;border:1px solid #e9ecef;text-align:left;">站点</th>
+                        <th style="padding:8px 10px;border:1px solid #e9ecef;text-align:left;">URL</th>
+                        <th style="padding:8px 10px;border:1px solid #e9ecef;text-align:center;width:110px;">结果</th>
+                        <th style="padding:8px 10px;border:1px solid #e9ecef;text-align:center;width:70px;">累计失败</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($checkResult['details'] as $d):
+                        $dResult = $d['result'] ?? '';
+                        $dFails = (int)($d['fails'] ?? 0);
+                        $dUrl = $d['url'] ?? '';
+                        if ($dResult === 'pass') {
+                            $badge = '<span style="color:#16a34a;font-weight:600;"><i class="ti ti-circle-check"></i> 通过</span>';
+                        } elseif ($dResult === 'fetch_failed') {
+                            $badge = '<span style="color:#dc2626;font-weight:600;"><i class="ti ti-alert-circle"></i> 抓取失败</span>';
+                        } else {
+                            $badge = '<span style="color:#d97706;font-weight:600;"><i class="ti ti-alert-triangle"></i> 未检测到代码</span>';
+                        }
+                    ?>
+                    <tr>
+                        <td style="padding:8px 10px;border:1px solid #e9ecef;font-weight:600;"><?= Security::e($d['name'] ?? '') ?></td>
+                        <td style="padding:8px 10px;border:1px solid #e9ecef;word-break:break-all;">
+                            <?php if ($dUrl): ?>
+                            <a href="<?= Security::safeUrl($dUrl) ?>" target="_blank" rel="noopener"><?= Security::e($dUrl) ?></a>
+                            <?php else: ?><span style="color:#ccc;">-</span><?php endif; ?>
+                        </td>
+                        <td style="padding:8px 10px;border:1px solid #e9ecef;text-align:center;"><?= $badge ?></td>
+                        <td style="padding:8px 10px;border:1px solid #e9ecef;text-align:center;">
+                            <?php if ($dFails > 0): ?>
+                            <span class="badge badge-danger"><?= $dFails ?> / 3</span>
+                            <?php else: ?>
+                            <span style="color:#9ca3af;">0</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <div class="flex-mt-gap-8" style="margin-top:12px;font-size:12px;color:#6b7280;line-height:1.7;">
+                <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;">
+                    <strong style="color:#b91c1c;">结果说明：</strong>
+                    「抓取失败」= 无法获取对方首页（超时/被拦截/证书问题等），不算未挂码；
+                    「未检测到代码」= 能打开页面但没找到本站联盟嵌入代码。
+                    连续 3 次未检测到代码（累计失败 = 3）才会自动移出联盟。
+                </div>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 </div>
 
 <!-- ========== Tab 4: 黑名单管理 ========== -->
@@ -716,7 +838,8 @@ if ($msg) { adminAlert($msg, $msgType); }
             <span class="card-title"><i class="ti ti-shield-off"></i> 黑名单列表</span>
 
             <div class="flex-center-gap-faaa">
-                <form method="GET" class="flex-gap-8">
+                <form method="GET" class="flex-gap-8" action="/admin/plugin.php?p=wormhole&tab=blacklist">
+                    <input type="hidden" name="p" value="wormhole">
                     <input type="hidden" name="tab" value="blacklist">
                     <select name="type" class="input-sm-cbd">
                         <option value="">全部类型</option>
@@ -804,13 +927,13 @@ if ($msg) { adminAlert($msg, $msgType); }
             </div>
             <div class="flex-gap-4">
                 <?php if ($page > 1): ?>
-                <a href="?tab=blacklist&page=<?= $page - 1 ?>&type=<?= $filterType ?>&search=<?= urlencode($search) ?>" class="btn btn-sm btn-ghost">上一页</a>
+                <a href="/admin/plugin.php?p=wormhole&tab=blacklist&page=<?= $page - 1 ?>&type=<?= $filterType ?>&search=<?= urlencode($search) ?>" class="btn btn-sm btn-ghost">上一页</a>
                 <?php endif; ?>
                 <span class="px-6-py-12-text-muted">
                     <?= $page ?> / <?= $blList['totalPages'] ?> 页（共 <?= $blList['total'] ?> 条）
                 </span>
                 <?php if ($page < $blList['totalPages']): ?>
-                <a href="?tab=blacklist&page=<?= $page + 1 ?>&type=<?= $filterType ?>&search=<?= urlencode($search) ?>" class="btn btn-sm btn-ghost">下一页</a>
+                <a href="/admin/plugin.php?p=wormhole&tab=blacklist&page=<?= $page + 1 ?>&type=<?= $filterType ?>&search=<?= urlencode($search) ?>" class="btn btn-sm btn-ghost">下一页</a>
                 <?php endif; ?>
             </div>
         </div>
@@ -838,9 +961,9 @@ function switchTab(tabId, el) {
         t.classList.remove('active');
     });
     if (el) el.classList.add('active');
-    // 更新 URL hash，便于刷新后保持当前 Tab
+    // 更新 URL hash，便于刷新后保持当前 Tab（保留 p=wormhole，防止丢失插件参数）
     if (history.replaceState) {
-        history.replaceState(null, null, '?tab=' + tabId);
+        history.replaceState(null, null, '/admin/plugin.php?p=wormhole&tab=' + tabId);
     }
 }
 

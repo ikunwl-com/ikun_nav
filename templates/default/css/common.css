@@ -1081,6 +1081,23 @@ body {
   padding: 16px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.04);
   }
+/* ===== 侧边栏广告位（ad 插件注入） ===== */
+.plugin-ad {
+  width: 100%;
+  margin: 12px 0;
+  white-space: normal;
+  overflow: hidden;
+  }
+.plugin-ad img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  }
+.plugin-ad a {
+  text-decoration: none;
+  color: inherit;
+  }
 /* ===== 结果计数 ===== */
 .result-count {
   font-size: 13px;
@@ -1950,88 +1967,119 @@ to {
 .g-url {
   display: none;
   }
-/* 分类侧边栏：手机端改为横向滚动 */
+/* 分类侧边栏：手机端改为三列网格，无需横向滚动 */
   .sidebar {
   width: 100% !important;
   position: static !important;
-  padding: 10px 12px;
+  padding: 12px;
   border-radius: var(--radius-md);
-  display: block;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  white-space: normal;
+  overflow: visible;
   }
 .sidebar-header {
   display: none;
   }
 .sidebar > .sidebar-item,
   .sidebar > a.sidebar-item {
-  display: inline-flex;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
+  justify-content: center;
+  gap: 6px;
+  padding: 14px 6px 12px;
+  border-radius: 10px;
   border: 1px solid var(--border);
   background: white;
-  font-size: 13px;
-  gap: 6px;
-  margin-bottom: 0;
-  margin-right: 6px;
-  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  margin: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
   }
 .sidebar-item i {
-  font-size: 16px;
+  font-size: 20px;
   width: auto;
   }
 .sidebar-item .count {
-  margin-left: 4px;
-  padding: 1px 6px;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  margin-left: 0;
+  padding: 0 6px;
   font-size: 10px;
+  line-height: 16px;
   min-width: auto;
   }
 .sidebar > a.sidebar-item.active,
   .sidebar-item.active {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
   color: white;
   border-color: transparent;
   }
 .sidebar > a.sidebar-item.active .count,
   .sidebar-item.active .count {
-  background: rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.25);
   color: white;
   }
-/* sidebar 内容横向滚动 */
-  .sidebar {
-  white-space: nowrap;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  }
-.sidebar::-webkit-scrollbar {
-  display: none;
-  }
-.wormhole-entry {
-  display: inline-flex;
+/* 虫洞联盟入口：与分类按钮一致的三列网格样式 */
+  .wormhole-entry {
+  display: block;
   border-top: none;
-  margin-top: 0;
-  padding-top: 0;
-  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
   }
 .wormhole-entry .wormhole-link {
-  display: inline-flex;
+  position: relative;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  padding: 6px 14px;
-  border-radius: var(--radius-full);
-  border: 1px dashed rgba(102,126,234,0.3);
-  background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.08));
-  font-size: 13px;
+  justify-content: center;
   gap: 6px;
-  white-space: nowrap;
+  padding: 14px 6px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(102,126,234,0.4);
+  background: linear-gradient(135deg, rgba(102,126,234,0.08), rgba(118,75,162,0.08));
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  height: 100%;
   }
 .wormhole-link i {
-  font-size: 16px;
+  font-size: 20px;
   }
 .wormhole-link .wormhole-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
   font-size: 10px;
+  line-height: 16px;
+  padding: 0 6px;
   color: #667eea;
+  background: rgba(102,126,234,0.12);
+  border-radius: 999px;
   }
-/* 侧边栏已在上方统一设为横向滚动 */
+/* 侧边栏广告：手机端改为全宽横幅，横跨三列 */
+  .sidebar .plugin-ad {
+  grid-column: 1 / -1;
+  display: block;
+  width: 100%;
+  margin: 0;
+  white-space: normal;
+  overflow: hidden;
+  text-align: center;
+  }
+.sidebar .plugin-ad img {
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  }
+/* 主布局：手机端纵向排列 */
   .main-layout {
   flex-direction: column;
   gap: 12px;

@@ -1,0 +1,13 @@
+{
+    "name": "notify",
+    "title": "邮箱通知",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "SMTP 邮箱通知插件：站点提交、反馈收到、站点审核通过/拒绝时自动发送邮件通知管理员。支持 SMTP 配置、通知开关、发送日志和测试发送。",
+    "main_file": "include.php",
+    "config_file": "main.php",
+    "schema_file": "schema.php",
+    "hooks": ["site_submitted", "feedback_submitted", "site_approved", "site_rejected", "admin_settings_nav", "admin_settings_tabs"],
+    "builtin": true,
+    "enabled": "0"
+}

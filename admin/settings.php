@@ -11,6 +11,54 @@ $authModel = new AuthModel();
 $msg = '';
 $msgType = 'success';
 
+// ========== 日志频道分组（基础信息 - 日志设置） ==========
+// 每个 key 对应 settings 表中的 log_{channel} 配置，读取方式见 core/Logger.php
+$logChannelGroups = [
+    '虫洞联盟' => [
+        'wormhole_join'    => '虫洞上报 / 加入联盟',
+        'wormhole_check'   => '虫洞每日检测',
+        'wormhole_model'   => '虫洞模型操作',
+        'wormhole_display' => '联盟成员列表展示',
+    ],
+    '友链自动收录' => [
+        'autolink' => '自动收录全流程',
+    ],
+    '安全风控' => [
+        'security_ratelimit' => '频率限制拦截',
+        'security_csrf'      => 'CSRF 校验失败',
+        'security_referer'   => 'Referer 校验失败',
+    ],
+    '跳转与 API' => [
+        'go_jump'  => '跳转请求（go.php）',
+        'api_5118' => '5118 权重 API 调用',
+        'api_tdk'  => 'TDK 抓取 API',
+        'open_api' => '开放 API（open/*）调用审计',
+    ],
+    '后台管理审计' => [
+        'admin_auth'      => '后台登录 / 登出 / 改密',
+        'admin_site'      => '站点增删改审',
+        'admin_category'  => '分类增删改排序',
+        'admin_feature'   => '推荐位设置',
+        'admin_blacklist' => '黑名单管理',
+        'admin_setting'   => '系统设置修改',
+        'admin_wormhole'  => '虫洞管理操作',
+        'admin_api_key'   => 'API Key 管理',
+    ],
+    '系统与数据库' => [
+        'database_error'   => 'SQL 执行失败',
+        'plugin_error'     => '插件运行错误',
+        'plugin_info'      => '插件安装 / 启用信息',
+        'plugin_uninstall' => '插件卸载记录',
+        'search_fallback'  => '搜索回退（FULLTEXT 不可用）',
+    ],
+];
+$logChannels = [];
+foreach ($logChannelGroups as $channels) {
+    foreach ($channels as $ch => $label) {
+        $logChannels[] = $ch;
+    }
+}
+
 // ========== POST 保存设置 ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!Security::verifyCSRFToken($_POST['csrf_token'] ?? '')) {
@@ -37,6 +85,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'session_timeout' => max(300, Security::int($_POST['session_timeout'] ?? 3600)),
                 'enable_captcha' => isset($_POST['enable_captcha']) ? '1' : '0',
             ];
+
+            // 日志设置：总开关 + 频道独立开关
+            // 总开关关闭时不改动各频道开关值（保留原配置，重新开启后仍生效）
+            $data['log_global'] = isset($_POST['log_global']) ? '1' : '0';
+            if (isset($_POST['log_global'])) {
+                foreach ($logChannels as $ch) {
+                    $data['log_' . $ch] = isset($_POST['log_' . $ch]) ? '1' : '0';
+                }
+            }
             $settingsModel->setMany($data);
             Logger::log('admin_setting', "修改基础设置 admin_id={$adminId} IP={$ip}");
             $msg = '基础设置已保存';
@@ -145,8 +202,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             Plugin::setConfig('submit', 'category_ids', implode(',', $categoryIds));
-            Logger::log('admin_setting', "修改提交收录设置 admin_id={$adminId} IP={$ip}");
+        Logger::log('admin_setting', "修改提交收录设置 admin_id={$adminId} IP={$ip}");
             $msg = '提交收录设置已保存';
+            break;
+
+        case 'notify':
+            $notifyData = [
+                'plugin_notify_smtp_host'   => Security::cleanString($_POST['notify_smtp_host'] ?? '', 200),
+                'plugin_notify_smtp_port'   => (string)max(1, min(65535, Security::int($_POST['notify_smtp_port'] ?? 465))),
+                'plugin_notify_smtp_user'   => Security::cleanString($_POST['notify_smtp_user'] ?? '', 200),
+                'plugin_notify_smtp_pass'   => Security::cleanString($_POST['notify_smtp_pass'] ?? '', 200),
+                'plugin_notify_smtp_secure' => Security::enum($_POST['notify_smtp_secure'] ?? 'ssl', ['ssl', 'tls', 'none'], 'ssl'),
+                'plugin_notify_from_email'  => Security::cleanString($_POST['notify_from_email'] ?? '', 200),
+                'plugin_notify_from_name'   => Security::cleanString($_POST['notify_from_name'] ?? '', 100),
+                'plugin_notify_recipient'   => Security::cleanString($_POST['notify_recipient'] ?? '', 500),
+                'plugin_notify_on_submit'   => isset($_POST['notify_on_submit']) ? '1' : '0',
+                'plugin_notify_on_feedback' => isset($_POST['notify_on_feedback']) ? '1' : '0',
+                'plugin_notify_on_approve'  => isset($_POST['notify_on_approve']) ? '1' : '0',
+                'plugin_notify_on_reject'   => isset($_POST['notify_on_reject']) ? '1' : '0',
+            ];
+            $settingsModel->setMany($notifyData);
+            Logger::log('admin_setting', "修改邮箱通知设置 admin_id={$adminId} IP={$ip}");
+            $msg = '邮箱通知配置已保存';
             break;
     }
 
@@ -273,6 +350,38 @@ if ($msg) { adminAlert($msg, $msgType);
         </label>
       </div>
 
+      <!-- 日志设置（全局总开关 + 频道独立开关） -->
+      <div style="margin-top:26px;padding-top:18px;border-top:1px solid #e9ecef;">
+        <div class="section-title" style="margin-bottom:12px;"><i class="ti ti-file-text"></i> 日志设置</div>
+        <div class="form-group">
+          <label class="flex-center-gap-10">
+            <input type="checkbox" name="log_global" value="1" id="logGlobal"
+                   <?= setting('log_global', '1') === '1' ? 'checked' : '' ?>
+                   class="wh-18" onchange="toggleLogChannels(this)">
+            <span><strong>日志总开关</strong>（关闭后所有日志停止记录；开启后自动展开下方频道开关，可逐项单独开启/关闭）</span>
+          </label>
+          <div class="form-help">对应配置 <code>log_global</code>。日志按天分目录写入 <code>data/logs/YYYYMMDD/{channel}.log</code>，频道开关对应 <code>log_{channel}</code> 配置，默认全部开启。</div>
+        </div>
+
+        <div id="log-channels" <?= setting('log_global', '1') === '1' ? '' : 'style="display:none;"' ?>>
+          <?php foreach ($logChannelGroups as $groupTitle => $channels): ?>
+          <div style="margin:14px 0 8px;font-size:13px;font-weight:600;color:#495057;"><?= Security::e($groupTitle) ?></div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;">
+            <?php foreach ($channels as $chKey => $chLabel): ?>
+            <label class="log-channel-item" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:#f8f9fa;border:1px solid #e9ecef;border-radius:8px;cursor:pointer;">
+              <input type="checkbox" name="log_<?= $chKey ?>" value="1"
+                     <?= setting('log_' . $chKey, '1') === '1' ? 'checked' : '' ?>
+                     style="width:16px;height:16px;cursor:pointer;flex-shrink:0;">
+              <span style="font-family:ui-monospace,Consolas,monospace;font-size:13px;white-space:nowrap;"><?= Security::e($chKey) ?></span>
+              <span style="color:#868e96;font-size:12px;line-height:1.4;"><?= Security::e($chLabel) ?></span>
+            </label>
+            <?php endforeach; ?>
+          </div>
+          <?php endforeach; ?>
+          <div class="form-help" style="margin-top:12px;">提示：关闭总开关时不会清空各频道开关状态，再次开启后按原频道设置生效；如需查看日志内容可直接打开对应 <code>data/logs/</code> 目录文件。</div>
+        </div>
+      </div>
+
       <div class="text-right">
         <button type="submit" class="btn btn-primary"><i class="ti ti-device-floppy"></i> 保存基础设置</button>
       </div>
@@ -365,6 +474,13 @@ function copyCode(id, btn) {
   }
 }
 
+// 日志总开关：开启时展开频道独立开关列表，关闭时收起
+function toggleLogChannels(el) {
+  var box = document.getElementById('log-channels');
+  if (!box) return;
+  box.style.display = el.checked ? '' : 'none';
+}
+
 function toggleRewriteFields(el) {
   var fields = document.getElementById('rewrite-url-fields');
   var rules = document.getElementById('rewrite-server-rules');
@@ -382,6 +498,10 @@ function toggleRewriteFields(el) {
 (function() {
   var mode = document.querySelector('input[name="rewrite_mode"]:checked');
   if (mode) toggleRewriteFields(mode);
+
+  // 初始化日志频道开关的显示状态
+  var logGlobal = document.getElementById('logGlobal');
+  if (logGlobal) toggleLogChannels(logGlobal);
 
   // 自动隐藏提示弹窗（3秒后淡出，切换Tab时立即隐藏）
   function hideAlert() {

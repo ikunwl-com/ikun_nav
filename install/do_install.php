@@ -142,18 +142,10 @@ $defaultSettings = [
     // 安全设置
     'session_timeout'          => '3600',
     'enable_captcha'           => '0',
-    // 所有插件默认关闭，启用时由 Plugin::ensureSchema 自动安装表、字段和配置
-    'plugin_ad_enabled'        => '0',
-    'plugin_article_enabled'   => '0',
-    'plugin_lightbox_enabled'  => '0',
-    'plugin_auto-alt_enabled'  => '0',
-    'plugin_auto-link_enabled' => '0',
-    'plugin_wormhole_enabled'  => '0',
-    'plugin_submit_enabled'    => '0',
-    'plugin_sitemap_enabled'   => '0',
-    'plugin_rewrite_enabled'   => '0',
-    'plugin_spider_enabled'    => '0',
-    'plugin_friendlink_enabled' => '0',
+    // 插件不需要预写 enabled 配置：
+    // Plugin::isEnabled() 默认返回 false（SettingsModel::get 返回 '0'）
+    // 插件启用时由 Plugin::ensureSchema 自动安装表、字段和配置
+    // 新增插件只需放入 plugins/ 目录，无需修改安装脚本
 ];
 
 $settingStmt = $pdo->prepare("INSERT INTO `{$settingsTbl}` (setting_key, setting_value) VALUES (?, ?)");

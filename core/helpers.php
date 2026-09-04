@@ -100,18 +100,14 @@ function parseDomain(string $url): string {
 }
 
 /**
- * 获取分类URL（根据伪静态模式）
+ * 获取分类URL（根据伪静态模式与后台 URL 格式配置）
+ * 统一走 Rewrite::url，尊重 url_format_category 等格式设置
  */
 function getCategoryUrl(string $slug): string {
-    $baseUrl = rtrim(getCurrentSiteUrl(), '/');
-    $rewriteConfig = Rewrite::getConfig();
-    $rewriteMode = $rewriteConfig['mode'] ?? 'dynamic';
-    
-    if ($rewriteMode === 'rewrite') {
-        return $baseUrl . '/' . $slug . '.html';
-    } else {
-        return $baseUrl . '/?cat=' . urlencode($slug);
+    if ($slug === '') {
+        return '#';
     }
+    return Rewrite::url('category', ['slug' => $slug]);
 }
 
 /**

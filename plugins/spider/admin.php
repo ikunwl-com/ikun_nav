@@ -114,7 +114,7 @@ if ($msg) { adminAlert($msg, $msgType); }
 ?>
 
 <!-- ========== 概览卡片 ========== -->
-<div style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:16px;margin-bottom:20px;">
+<div class="spider-overview-grid" style="display:grid;grid-template-columns:repeat(auto-fill, minmax(220px, 1fr));gap:16px;margin-bottom:20px;">
     <div style="background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;border-radius:12px;padding:20px;box-shadow:0 2px 8px rgba(102,126,234,0.3);">
         <div style="display:flex;align-items:center;justify-content:space-between;">
             <div>
@@ -215,7 +215,7 @@ if ($msg) { adminAlert($msg, $msgType); }
                 <td style="padding:10px 12px;border:1px solid #e9ecef;text-align:center;"><?= $ipCount ?></td>
                 <td style="padding:10px 12px;border:1px solid #e9ecef;font-size:13px;color:#666;"><?= $lastVisit ? formatDate($lastVisit) : '<span style="color:#ccc;">无</span>' ?></td>
                 <td style="padding:10px 12px;border:1px solid #e9ecef;text-align:center;white-space:nowrap;">
-                    <a href="?type=<?= Security::eAttr($engine) ?>" class="btn btn-sm btn-secondary" title="查看记录"><i class="ti ti-eye"></i></a>
+                    <a href="/admin/plugin.php?p=spider&type=<?= Security::eAttr($engine) ?>" class="btn btn-sm btn-secondary" title="查看记录"><i class="ti ti-eye"></i></a>
                     <form method="POST" style="display:inline;" onsubmit="return confirm('确定清空 <?= Security::eAttr($info['name']) ?> 的全部记录？')">
                         <input type="hidden" name="csrf_token" value="<?= Security::eAttr($_SESSION['csrf_token'] ?? '') ?>">
                         <input type="hidden" name="action" value="clear_engine">
@@ -328,11 +328,11 @@ if ($msg) { adminAlert($msg, $msgType); }
     <?php if ($totalPages > 1): ?>
     <div class="flex-center-gap-8" style="padding:12px;border-top:1px solid #e9ecef;">
         <?php if ($page > 1): ?>
-        <a href="?page=<?= $page - 1 ?><?= $filterEngine ? '&type=' . Security::eAttr($filterEngine) : '' ?>" class="btn btn-sm btn-secondary">上一页</a>
+        <a href="/admin/plugin.php?p=spider&page=<?= $page - 1 ?><?= $filterEngine ? '&type=' . Security::eAttr($filterEngine) : '' ?>" class="btn btn-sm btn-secondary">上一页</a>
         <?php endif; ?>
         <span style="color:#666;font-size:13px;">第 <?= $page ?> / <?= $totalPages ?> 页</span>
         <?php if ($page < $totalPages): ?>
-        <a href="?page=<?= $page + 1 ?><?= $filterEngine ? '&type=' . Security::eAttr($filterEngine) : '' ?>" class="btn btn-sm btn-secondary">下一页</a>
+        <a href="/admin/plugin.php?p=spider&page=<?= $page + 1 ?><?= $filterEngine ? '&type=' . Security::eAttr($filterEngine) : '' ?>" class="btn btn-sm btn-secondary">下一页</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>

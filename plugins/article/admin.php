@@ -185,10 +185,14 @@ if ($msg) { adminAlert($msg, $msgType); }
 
         <div class="form-group">
             <label>状态</label>
+            <?php
+            // 后台新增文章默认「发布」，不再默认草稿/待审核（编辑时保持原状态）
+            $artDefaultStatus = $editArticle ? ($editArticle['status'] ?? 'published') : 'published';
+            ?>
             <select class="form-input" name="status">
-                <option value="draft"     <?= ($editArticle['status'] ?? '') === 'draft'     ? 'selected' : '' ?>>草稿</option>
-                <option value="published" <?= ($editArticle['status'] ?? '') === 'published' ? 'selected' : '' ?>>发布</option>
-                <option value="pending"   <?= ($editArticle['status'] ?? '') === 'pending'   ? 'selected' : '' ?>>待审核</option>
+                <option value="published" <?= $artDefaultStatus === 'published' ? 'selected' : '' ?>>发布</option>
+                <option value="draft"     <?= $artDefaultStatus === 'draft'     ? 'selected' : '' ?>>草稿</option>
+                <option value="pending"   <?= $artDefaultStatus === 'pending'   ? 'selected' : '' ?>>待审核</option>
             </select>
         </div>
 
@@ -255,11 +259,11 @@ if ($msg) { adminAlert($msg, $msgType); }
     <?php if ($totalPages > 1): ?>
     <div class="flex-center-gap-8" style="padding:12px;border-top:1px solid #e9ecef;">
         <?php if ($page > 1): ?>
-        <a href="?page=<?= $page - 1 ?>" class="btn btn-sm btn-secondary">上一页</a>
+        <a href="/admin/plugin.php?p=article&page=<?= $page - 1 ?>" class="btn btn-sm btn-secondary">上一页</a>
         <?php endif; ?>
         <span style="color:#666;font-size:13px;">第 <?= $page ?> / <?= $totalPages ?> 页</span>
         <?php if ($page < $totalPages): ?>
-        <a href="?page=<?= $page + 1 ?>" class="btn btn-sm btn-secondary">下一页</a>
+        <a href="/admin/plugin.php?p=article&page=<?= $page + 1 ?>" class="btn btn-sm btn-secondary">下一页</a>
         <?php endif; ?>
     </div>
     <?php endif; ?>

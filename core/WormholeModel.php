@@ -338,18 +338,20 @@ class WormholeModel
 
     /**
      * 获取需要检测的站点（auto 类型）
+     * @param bool $forceAll true=忽略 24 小时间隔，全部检测（后台“全量检测”使用）
      */
-    public function getAutoMembersForCheck(): array
+    public function getAutoMembersForCheck(bool $forceAll = false): array
     {
         $tbl = Database::table('sites');
-        // 超过 24 小时未检测的
+        // 超过 24 小时未检测的（全量检测时忽略时间间隔）
         $sql = "SELECT id, name, url, wormhole_source_domain, wormhole_check_fail
                 FROM {$tbl}
                 WHERE wormhole_status = 'auto'
-                AND status = 'published'
-                AND (wormhole_last_check IS NULL OR wormhole_last_check < DATE_SUB(NOW(), INTERVAL 24 HOUR))
-                ORDER BY wormhole_last_check ASC
-                LIMIT 50";
+                AND status = 'published'";
+        if (!$forceAll) {
+            $sql .= " AND (wormhole_last_check IS NULL OR wormhole_last_check < DATE_SUB(NOW(), INTERVAL 24 HOUR))";
+        }
+        $sql .= " ORDER BY wormhole_last_check ASC LIMIT 50";
         return Database::query($sql);
     }
 

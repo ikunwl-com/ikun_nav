@@ -589,7 +589,7 @@ class SiteModel
                 $data['tags'] ?? '[]',
                 $data['is_featured'] ?? 0,
                 $data['sort_order'] ?? 0,
-                $data['status'] ?? 'pending',
+                $data['status'] ?? 'published',
                 $data['submit_ip'] ?? '',
             ]);
             self::clearRankingCache();
@@ -614,7 +614,7 @@ class SiteModel
             $data['tags'] ?? '[]',
             $data['is_featured'] ?? 0,
             $data['sort_order'] ?? 0,
-            $data['status'] ?? 'pending',
+            $data['status'] ?? 'published',
             $data['submit_ip'] ?? '',
         ]);
         self::clearRankingCache();

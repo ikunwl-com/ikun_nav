@@ -15,6 +15,7 @@
 - **虫洞联盟**：站点间互相引流，加入联盟后自动展示联盟成员
 - **TDK 权重采集**：自动抓取站点标题/描述/关键词，对接 5118 查询搜索引擎权重
 - **Sitemap 生成**：自动生成标准 XML Sitemap 和 robots.txt
+- **开放 API**：API Key 鉴权，覆盖站点/分类的查询与发布、编辑、删除接口，内置插件数据接口启用后自动注册，方便 App / 小程序 / 合作方直接对接（详见 [开放 API 对接文档](data/docs/api-guide.md)）
 - **伪静态支持**：支持 Apache/Nginx 伪静态，可自定义 URL 格式
 - **主题系统**：支持多主题切换，易于开发和扩展
 - **完整日志**：覆盖自动收录、虫洞联盟、后台审计等全链路日志
@@ -38,7 +39,7 @@
     wormhole.php      # 虫洞联盟管理
     ...
   api/                # RESTful API 入口
-    index.php         # API 路由分发（含 auto-link 自动收录接口）
+    index.php         # API 路由分发（open/* 开放接口与插件接口由 core/OpenApi.php 注册）
   core/               # 核心类库
     AutoLinkModel.php # 友链自动收录核心逻辑
     Theme.php         # 主题系统
@@ -56,21 +57,24 @@
     do_install.php    # 安装脚本
   data/               # 数据目录
     logs/             # 日志文件（按天分目录）
-    sitemap/          # Sitemap 缓存
-  docs/               # 开发文档
+    backups/          # 数据库备份（dbtool 插件）
+    docs/             # 文档（index.php 为在线版文档，*.md 为配套文档）
+  docs/               # 开发文档（存放于 data/docs/）
+    index.php         # 在线版使用与开发文档（访问 /data/docs/ 查看）
     theme-dev.md      # 主题开发指南
+    plugin-dev.md     # 插件开发指南
     log-guide.md      # 日志系统使用指南
-    autolink-dev.md   # 友链自动收录开发文档
 ```
 
 ## 文档索引
 
 | 文档 | 面向读者 | 内容 |
 |------|----------|------|
-| [主题开发指南](data/docs/theme-dev.md) | 前端/主题开发者 | 主题目录结构、模板变量、自动收录集成代码、最佳实践 |
-| [插件开发指南](data/docs/plugin-dev.md) | 插件应用开发者 | hook使用、函数变量、内置插件案例、讲解 |
-| [日志系统指南](data/docs/log-guide.md) | 运维/开发者 | 日志频道清单、开关配置、查看方法、清理策略 |
-| [自动收录开发文档](data/docs/autolink-dev.md) | 后端开发者 | 工作原理、API 接口、安全机制、二次开发指南、调试排查 |
+| [在线版文档](data/docs/index.php) | 全体 | 使用与开发全量文档（安装、系统结构、主题开发、插件开发、内置插件、参考） |
+| [主题开发指南](data/docs/theme-dev.md) | 前端/主题开发者 | 主题目录结构、模板变量、Theme 方法、钩子集成、最佳实践 |
+| [插件开发指南](data/docs/plugin-dev.md) | 插件应用开发者 | plugin.json、schema.php、钩子系统、Plugin API、内置插件案例 |
+| [日志系统指南](data/docs/log-guide.md) | 运维/开发者 | 日志频道清单、后台开关配置、查看与清理方法 |
+| [开放 API 对接文档](data/docs/api-guide.md) | App/小程序/合作方开发 | API Key 鉴权、站点/分类查询与发布/编辑/删除接口、内置插件接口、请求响应示例与代码示例 |
 
 ## 友链自动收录
 
@@ -92,14 +96,12 @@
 | `site_slogan` | `发现好网站` | 站点口号 |
 | `current_theme` | `default` | 当前主题 |
 | `rewrite_mode` | `dynamic` | URL 模式：`dynamic`/`rewrite`/`index` |
-| `autolink_enable` | `0` | 友链自动收录开关 |
-| `autolink_review` | `0` | 收录后是否需审核 |
-| `autolink_cat_id` | `1` | 自动收录默认分类 ID |
-| `autolink_ban_words` | `""` | 违禁词黑名单 |
-| `block_all_ip` | `0` | 全局 IP 屏蔽 |
-| `log_global` | `1` | 日志总开关 |
+| `autolink_enable` | `0` | 友链自动收录开关（auto-link 插件） |
+| `autolink_need_review` | `1` | 收录后是否需审核 |
+| `autolink_default_category` | `0` | 自动收录默认分类 ID |
+| `autolink_banned_words` | `""` | 违禁词黑名单 |
+| `log_global` | `1` | 日志总开关（基础设置 → 基础信息 → 日志设置） |
 | `log_autolink` | `1` | 自动收录日志开关 |
-| `sitemap_cache_ttl` | `21600` | Sitemap 缓存时间（秒） |
 
 ## 伪静态配置
 
@@ -116,7 +118,7 @@ RewriteRule . /index.php [L]
 
 ### Nginx
 
-使用项目根目录 `nginx-rewrite.conf`：
+伪静态模式请以后台「基础设置 - 伪静态」生成的规则为准，参考配置：
 
 ```nginx
 location / {

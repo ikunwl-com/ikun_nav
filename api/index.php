@@ -92,15 +92,17 @@ $routes = [
     'rate'               => ['POST', 'api_rate'],
     'feedback'           => ['POST', 'api_feedback'],
     'auto-link'          => ['GET', 'api_auto_link'],
-
-    // ===== 开放 API（需要 API Key 鉴权） =====
-    'open/sites'         => ['GET', 'api_open_sites'],
-    'open/site'          => ['GET', 'api_open_site_detail'],
-    'open/rank'          => ['GET', 'api_open_rank'],
-    'open/categories'    => ['GET', 'api_open_categories'],
-    'open/search'        => ['GET', 'api_open_search'],
-    'open/stats'         => ['GET', 'api_open_stats'],
 ];
+
+// ===== 开放 API（需要 API Key 鉴权） =====
+// 核心 open/* 接口与「已启用插件」声明的接口统一由 OpenApi 注册表（core/OpenApi.php）管理：
+// 插件开启后其接口自动注册，无需修改本文件；关闭后自动失效。
+$routes = array_merge($routes, OpenApi::coreRoutes());
+
+// 仅对 open/* 请求补充加载已启用插件的接口（避免普通请求加载插件 api.php）
+if (OpenApi::isOpen($endpoint)) {
+    $routes = array_merge($routes, OpenApi::pluginRoutes());
+}
 
 // 插件守卫：某些 API 端点依赖特定插件，未启用时返回错误
 $pluginGuardedEndpoints = [
@@ -126,6 +128,15 @@ if (isset($pluginGuardedEndpoints[$endpoint])) {
 }
 
 if (!isset($routes[$endpoint])) {
+    // 端点属于某个插件但该插件未启用时给出明确提示（而非笼统的“接口不存在”）
+    $pluginDef = OpenApi::findPluginDef($endpoint);
+    if ($pluginDef) {
+        Security::jsonOutput([
+            'success' => false,
+            'code'    => 40301,
+            'message' => '接口所属插件「' . ($pluginDef['plugin_title'] ?? $pluginDef['plugin']) . '」未启用，请在后台插件管理中启用后使用',
+        ], 403);
+    }
     Security::jsonOutput(['success' => false, 'message' => '接口不存在'], 404);
 }
 
@@ -137,8 +148,9 @@ if ($method !== $allowedMethod) {
 
 // POST 接口 CSRF 校验（click/rate/feedback 除外，这些是公开 API）
 // update-meta 需要 CSRF 校验以防止站点元数据被篡改
+// open/* 开放接口使用 API Key 鉴权，豁免 CSRF（由下方 API Key 校验保护）
 $csrfExempts = ['click', 'rate', 'feedback'];
-if ($method === 'POST' && !in_array($endpoint, $csrfExempts)) {
+if ($method === 'POST' && !OpenApi::isOpen($endpoint) && !in_array($endpoint, $csrfExempts)) {
     if ($endpoint === 'fetch-tdk' && !empty($_GET['internal'])) {
         // 内部调用：使用 HMAC 签名验证而非简单 GET 参数
         $sign = $_SERVER['HTTP_X_INTERNAL_SIGN'] ?? '';
@@ -155,16 +167,15 @@ if ($method === 'POST' && !in_array($endpoint, $csrfExempts)) {
     }
 }
 
-// ========== API Key 鉴权（开放接口） ==========
-$apiKeyEndpoints = [
-    'open/sites', 'open/site', 'open/rank', 'open/categories', 'open/search', 'open/stats'
-];
-
-if (in_array($endpoint, $apiKeyEndpoints, true)) {
+// ========== API Key 鉴权（开放接口 open/*，含核心接口与已启用插件接口） ==========
+if (OpenApi::isOpen($endpoint)) {
     $apiKeyModel = new ApiKeyModel();
 
-    // 从 Header 或 GET 参数获取 API Key
+    // 从 Header、GET 参数或 POST JSON 中获取 API Key
     $apiKey = $_SERVER['HTTP_X_API_KEY'] ?? $_GET['api_key'] ?? '';
+    if ($apiKey === '' && $method === 'POST') {
+        $apiKey = api_json_input()['api_key'] ?? '';
+    }
 
     if (empty($apiKey)) {
         header('X-RateLimit-Limit: 0');
@@ -378,6 +389,7 @@ function api_submit(): void
     $cat  = (int)($input['category_id'] ?? 0);
     $tags = Security::cleanTags($input['tags'] ?? '');
     $description = Security::cleanString($input['description'] ?? '', 200);
+    $email = Security::cleanString($input['email'] ?? '', 100);
     $br_pc     = (int)($input['br_pc'] ?? 0);
     $br_mobile = (int)($input['br_mobile'] ?? 0);
     $br_360    = (int)($input['br_360'] ?? 0);
@@ -404,20 +416,24 @@ function api_submit(): void
 
     $siteModel = new SiteModel();
     $id = $siteModel->create([
-        'name'        => $name,
-        'url'         => $url,
-        'category_id' => $cat,
-        'description' => $description,
-        'tags'        => json_encode($tags, JSON_UNESCAPED_UNICODE),
-        'title'       => $name,
-        'keywords'    => implode(',', $tags),
-        'status'      => $status,
-        'submit_ip'   => $ip,
-        'br_pc'       => $br_pc,
-        'br_mobile'   => $br_mobile,
-        'br_360'      => $br_360,
-        'br_shenma'   => $br_shenma,
+        'name'         => $name,
+        'url'          => $url,
+        'category_id'  => $cat,
+        'description'  => $description,
+        'tags'         => json_encode($tags, JSON_UNESCAPED_UNICODE),
+        'title'        => $name,
+        'keywords'     => implode(',', $tags),
+        'status'       => $status,
+        'submit_ip'    => $ip,
+        'submit_email' => $email,
+        'br_pc'        => $br_pc,
+        'br_mobile'    => $br_mobile,
+        'br_360'       => $br_360,
+        'br_shenma'    => $br_shenma,
     ]);
+
+    // 通知钩子：站点提交后触发（邮箱通知等插件可监听）
+    Plugin::hook('site_submitted', [['id' => $id, 'name' => $name, 'url' => $url, 'category_id' => $cat, 'status' => $status, 'ip' => $ip, 'email' => $email]]);
 
     Security::jsonOutput([
         'success' => true,
@@ -1143,6 +1159,8 @@ function api_feedback(): void
     $ok = $siteModel->submitFeedback($siteId, $type, $content, $email, $ip);
 
     if ($ok) {
+        // 通知钩子：反馈提交后触发（邮箱通知等插件可监听）
+        Plugin::hook('feedback_submitted', [['site_id' => $siteId, 'type' => $type, 'content' => $content, 'email' => $email, 'ip' => $ip]]);
         Security::jsonOutput(['success' => true, 'message' => '反馈提交成功，我们会尽快处理']);
     } else {
         Security::jsonOutput(['success' => false, 'message' => '反馈提交失败'], 500);
@@ -1610,7 +1628,9 @@ function api_open_rank(): void
 function api_open_categories(): void
 {
     $catModel = new CategoryModel();
-    $categories = $catModel->getSidebarCategories();
+    // 默认返回前台展示分类；all=1 返回全部分类（含隐藏），便于管理端使用
+    $all = (($_GET['all'] ?? '') === '1' || (($_GET['all'] ?? '') === 'true'));
+    $categories = $all ? $catModel->getAll() : $catModel->getSidebarCategories();
 
     $data = array_map(function ($cat) {
         return [
@@ -1723,5 +1743,542 @@ function api_open_stats(): void
             'recent_7days_sites' => (int)$recentSites,
             'updated_at' => date('Y-m-d H:i:s'),
         ],
+    ]);
+}
+
+// ==================== 开放 API 公共工具 ====================
+
+/**
+ * 读取 API 请求体（JSON 优先，兼容表单提交），带缓存避免重复解析
+ */
+function api_json_input(): array
+{
+    static $input = null;
+    if ($input === null) {
+        $raw     = file_get_contents('php://input');
+        $decoded = $raw ? json_decode($raw, true) : null;
+        $input   = is_array($decoded) ? $decoded : $_POST;
+    }
+    return $input;
+}
+
+/**
+ * 标签入参统一转 JSON 数组字符串
+ * 兼容：数组 / 逗号分隔字符串 / JSON 数组字符串
+ */
+function api_tags_to_json($tags): string
+{
+    $arr = [];
+    if (is_array($tags)) {
+        $arr = $tags;
+    } elseif (is_string($tags) && $tags !== '') {
+        $trimmed = trim($tags);
+        if ($trimmed !== '' && $trimmed[0] === '[') {
+            $decoded = json_decode($trimmed, true);
+            if (is_array($decoded)) {
+                $arr = $decoded;
+            }
+        } else {
+            $arr = explode(',', $trimmed);
+        }
+    }
+    return json_encode(Security::cleanTags($arr), JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * 权重字段清洗（0~10）
+ */
+function api_open_br_fields(array $input): array
+{
+    $out = [];
+    foreach (['br_pc', 'br_mobile', 'br_360', 'br_shenma'] as $f) {
+        $out[$f] = max(0, min(10, Security::int($input[$f] ?? 0)));
+    }
+    return $out;
+}
+
+/**
+ * 开放接口写入日志（open_api 频道，后台日志设置中可开关）
+ */
+function api_open_log(string $message): void
+{
+    Logger::log('open_api', $message . ' IP=' . Security::getClientIP());
+}
+
+// ==================== 新增开放 API Handlers ====================
+
+/**
+ * GET /api/open/site/check?url=https://example.com
+ * 查询一个网址是否已被收录及其审核状态
+ */
+function api_open_site_check(): void
+{
+    $url = Security::cleanString($_GET['url'] ?? '');
+    if ($url === '') {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少 url 参数'], 400);
+    }
+    if (!preg_match('/^https?:\/\//i', $url)) {
+        $url = 'https://' . $url;
+    }
+    $host = parse_url($url, PHP_URL_HOST) ?? '';
+    if (empty($host) || Security::isInternalHost($host)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '不允许的 URL'], 400);
+    }
+
+    // 同时匹配 www 与非 www 变体
+    $rawHost  = strtolower(preg_replace('/:\d+$/', '', $host));
+    $variants = [$rawHost];
+    if (preg_match('/^www\./i', $rawHost)) {
+        $variants[] = substr($rawHost, 4);
+    } else {
+        $variants[] = 'www.' . $rawHost;
+    }
+
+    $clauses = [];
+    $params  = [];
+    foreach ($variants as $v) {
+        $clauses[] = 'url LIKE ?';
+        $params[]  = '%//' . $v . '%';
+    }
+
+    $tbl  = Database::table('sites');
+    $site = Database::queryOne(
+        "SELECT id, name, url, category_id, description, status, views, clicks, created_at
+         FROM {$tbl}
+         WHERE (" . implode(' OR ', $clauses) . ")
+           AND status IN ('published', 'pending')
+         ORDER BY (status = 'published') DESC, id DESC
+         LIMIT 1",
+        $params
+    );
+
+    if (!$site) {
+        Security::jsonOutput([
+            'success' => true,
+            'code'    => 0,
+            'message' => 'ok',
+            'data'    => ['found' => false, 'status' => null, 'status_text' => '未收录'],
+        ]);
+    }
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => 'ok',
+        'data'    => [
+            'found'       => true,
+            'id'          => (int)$site['id'],
+            'name'        => $site['name'],
+            'url'         => $site['url'],
+            'domain'      => getDisplayDomain($site['url']),
+            'category_id' => (int)$site['category_id'],
+            'description' => $site['description'] ?? '',
+            'views'       => (int)$site['views'],
+            'clicks'      => (int)$site['clicks'],
+            'status'      => $site['status'],
+            'status_text' => $site['status'] === 'published' ? '已收录' : '待审核',
+            'created_at'  => $site['created_at'],
+        ],
+    ]);
+}
+
+/**
+ * GET /api/open/site/related?id=1&limit=6
+ * 获取与指定站点同分类的相关站点
+ */
+function api_open_related(): void
+{
+    $id    = (int)($_GET['id'] ?? 0);
+    $limit = max(1, min(12, (int)($_GET['limit'] ?? 6)));
+    if ($id <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少站点ID参数'], 400);
+    }
+
+    $siteModel = new SiteModel();
+    $site      = $siteModel->getSite($id);
+    if (!$site || $site['status'] !== 'published') {
+        Security::jsonOutput(['success' => false, 'code' => 40401, 'message' => '站点不存在或未发布'], 404);
+    }
+
+    $related = $siteModel->getRelatedSites((int)$site['category_id'], $id, $limit);
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => 'ok',
+        'data'    => [
+            'site_id' => $id,
+            'list'    => array_map('formatSite', $related),
+            'count'   => count($related),
+        ],
+    ]);
+}
+
+/**
+ * GET /api/open/featured?limit=12
+ * 获取全局推荐站点
+ */
+function api_open_featured(): void
+{
+    $limit = max(1, min(50, (int)($_GET['limit'] ?? 12)));
+    $siteModel = new SiteModel();
+    $items = $siteModel->getGlobalFeatured($limit);
+    $ids   = array_column($items, 'id');
+    $siteModel->incrementViewsBatch($ids);
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => 'ok',
+        'data'    => [
+            'list'  => array_map('formatSite', $items),
+            'count' => count($items),
+        ],
+    ]);
+}
+
+/**
+ * GET /api/open/plugins
+ * 获取插件列表与启用状态（供客户端判断插件接口是否可用）
+ */
+function api_open_plugins(): void
+{
+    $list = [];
+    foreach (Plugin::scan() as $name => $info) {
+        $list[] = [
+            'name'         => $name,
+            'title'        => $info['title'] ?? $name,
+            'version'      => $info['version'] ?? '',
+            'author'       => $info['author'] ?? '',
+            'description'  => $info['description'] ?? '',
+            'enabled'      => (bool)($info['enabled'] ?? false),
+            'builtin'      => (bool)($info['builtin'] ?? true),
+            'has_open_api' => is_file(Plugin::getDir($name) . '/api.php'),
+        ];
+    }
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => 'ok',
+        'data'    => ['list' => $list, 'total' => count($list)],
+    ]);
+}
+
+/**
+ * POST /api/open/submit - 发布 / 提交站点（API Key 受信凭证，默认直接发布）
+ */
+function api_open_submit(): void
+{
+    $input  = api_json_input();
+    $name   = Security::cleanString($input['name'] ?? '', 100);
+    $url    = Security::safeUrl($input['url'] ?? '');
+    $cat    = Security::int($input['category_id'] ?? 0);
+    $tags   = api_tags_to_json($input['tags'] ?? '');
+    $desc   = Security::cleanString($input['description'] ?? '', 200);
+    $email  = Security::cleanString($input['email'] ?? '', 100);
+    $status = Security::enum($input['status'] ?? '', ['published', 'pending'], 'published');
+    $brs    = api_open_br_fields($input);
+
+    if (empty($name) || empty($url)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '名称和网址不能为空'], 400);
+    }
+    if ($cat <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '请选择分类'], 400);
+    }
+    $catModel = new CategoryModel();
+    if (!$catModel->getById($cat)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '分类不存在'], 400);
+    }
+
+    $siteModel = new SiteModel();
+    $id = $siteModel->create([
+        'name'        => $name,
+        'url'         => $url,
+        'category_id' => $cat,
+        'description' => $desc,
+        'tags'        => $tags,
+        'status'      => $status,
+        'submit_ip'   => Security::getClientIP(),
+        'submit_email'=> $email,
+        'br_pc'       => $brs['br_pc'],
+        'br_mobile'   => $brs['br_mobile'],
+        'br_360'      => $brs['br_360'],
+        'br_shenma'   => $brs['br_shenma'],
+    ]);
+
+    Plugin::hook('site_submitted', [['id' => $id, 'name' => $name, 'url' => $url, 'category_id' => $cat, 'status' => $status, 'ip' => Security::getClientIP(), 'email' => $email]]);
+    api_open_log("[开放API-发布] 站点ID={$id} 名称={$name} 状态={$status}");
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => $status === 'pending' ? '提交成功，等待审核' : '发布成功',
+        'id'      => $id,
+        'status'  => $status,
+    ]);
+}
+
+/**
+ * POST /api/open/site/update - 编辑站点（部分更新）
+ */
+function api_open_site_update(): void
+{
+    $input = api_json_input();
+    $id    = Security::int($input['id'] ?? 0);
+    if ($id <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少站点ID参数'], 400);
+    }
+
+    $siteModel = new SiteModel();
+    $site = $siteModel->getSite($id);
+    if (!$site) {
+        Security::jsonOutput(['success' => false, 'code' => 40401, 'message' => '站点不存在'], 404);
+    }
+
+    $data = [];
+    if (array_key_exists('name', $input)) {
+        $name = Security::cleanString($input['name'] ?? '', 100);
+        if ($name === '') {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '名称不能为空'], 400);
+        }
+        $data['name'] = $name;
+    }
+    if (array_key_exists('url', $input)) {
+        $url = Security::safeUrl($input['url'] ?? '');
+        if ($url === '') {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '网址不能为空'], 400);
+        }
+        $data['url'] = $url;
+    }
+    if (array_key_exists('category_id', $input)) {
+        $cat = Security::int($input['category_id'] ?? 0);
+        if ($cat <= 0 || !(new CategoryModel())->getById($cat)) {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '分类不存在'], 400);
+        }
+        $data['category_id'] = $cat;
+    }
+    if (array_key_exists('description', $input)) {
+        $data['description'] = Security::cleanString($input['description'] ?? '', 200);
+    }
+    if (array_key_exists('tags', $input)) {
+        $data['tags'] = api_tags_to_json($input['tags']);
+    }
+    if (array_key_exists('status', $input)) {
+        $data['status'] = Security::enum($input['status'] ?? '', ['published', 'pending'], '');
+        if ($data['status'] === '') {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => 'status 仅支持 published / pending'], 400);
+        }
+    }
+    if (array_key_exists('is_featured', $input)) {
+        $data['is_featured'] = (int)$input['is_featured'] === 1 ? 1 : 0;
+    }
+    if (array_key_exists('sort_order', $input)) {
+        $data['sort_order'] = max(0, Security::int($input['sort_order'] ?? 0));
+    }
+    foreach (['br_pc', 'br_mobile', 'br_360', 'br_shenma'] as $bf) {
+        if (array_key_exists($bf, $input)) {
+            $data[$bf] = max(0, min(10, Security::int($input[$bf] ?? 0)));
+        }
+    }
+
+    if (empty($data)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '没有可更新的字段'], 400);
+    }
+
+    $siteModel->update($id, $data);
+    api_open_log("[开放API-编辑] 站点ID={$id} 更新字段=" . implode(',', array_keys($data)));
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => '更新成功',
+        'id'      => $id,
+        'updated' => array_keys($data),
+    ]);
+}
+
+/**
+ * POST /api/open/site/delete - 删除站点
+ */
+function api_open_site_delete(): void
+{
+    $input = api_json_input();
+    $id    = Security::int($input['id'] ?? 0);
+    if ($id <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少站点ID参数'], 400);
+    }
+
+    $siteModel = new SiteModel();
+    if (!$siteModel->getSite($id)) {
+        Security::jsonOutput(['success' => false, 'code' => 40401, 'message' => '站点不存在'], 404);
+    }
+
+    $siteModel->delete($id);
+    api_open_log("[开放API-删除] 站点ID={$id}");
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => '删除成功',
+        'id'      => $id,
+    ]);
+}
+
+/**
+ * POST /api/open/category/create - 新增分类
+ */
+function api_open_category_create(): void
+{
+    $input = api_json_input();
+    $name  = Security::cleanString($input['name'] ?? '', 50);
+    $slug  = Security::validateSlug($input['slug'] ?? '');
+    if ($name === '' || $slug === '') {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '名称和 slug 不能为空（slug 仅含小写字母、数字、中划线）'], 400);
+    }
+
+    $catModel = new CategoryModel();
+    if ($catModel->getBySlug($slug)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => 'slug 已存在，请更换'], 400);
+    }
+
+    $icon = Security::cleanString($input['icon'] ?? '', 50);
+    if ($icon !== '' && !preg_match('/^[a-z0-9\-]+$/', $icon)) {
+        $icon = '';
+    }
+
+    $id = $catModel->create([
+        'name'        => $name,
+        'slug'        => $slug,
+        'icon'        => $icon !== '' ? $icon : 'category',
+        'sort_order'  => max(0, Security::int($input['sort_order'] ?? 0)),
+        'show_count'  => max(1, min(50, Security::int($input['show_count'] ?? 12))),
+        'is_show'     => isset($input['is_show']) ? ((int)$input['is_show'] === 1 ? 1 : 0) : 1,
+        'seo_title'   => Security::cleanString($input['seo_title'] ?? '', 200),
+        'seo_desc'    => Security::cleanString($input['seo_desc'] ?? '', 200),
+        'fill_sort'   => Security::enum($input['fill_sort'] ?? '', ['newest', 'views', 'br'], 'newest'),
+    ]);
+    api_open_log("[开放API-新增分类] 分类ID={$id} 名称={$name} slug={$slug}");
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => '分类创建成功',
+        'id'      => $id,
+    ]);
+}
+
+/**
+ * POST /api/open/category/update - 编辑分类（部分更新）
+ */
+function api_open_category_update(): void
+{
+    $input = api_json_input();
+    $id    = Security::int($input['id'] ?? 0);
+    if ($id <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少分类ID参数'], 400);
+    }
+
+    $catModel = new CategoryModel();
+    if (!$catModel->getById($id)) {
+        Security::jsonOutput(['success' => false, 'code' => 40401, 'message' => '分类不存在'], 404);
+    }
+
+    $data = [];
+    if (array_key_exists('name', $input)) {
+        $name = Security::cleanString($input['name'] ?? '', 50);
+        if ($name === '') {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '名称不能为空'], 400);
+        }
+        $data['name'] = $name;
+    }
+    if (array_key_exists('slug', $input)) {
+        $slug = Security::validateSlug($input['slug'] ?? '');
+        if ($slug === '') {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => 'slug 仅含小写字母、数字、中划线'], 400);
+        }
+        $existing = $catModel->getBySlug($slug);
+        if ($existing && (int)$existing['id'] !== $id) {
+            Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => 'slug 已存在，请更换'], 400);
+        }
+        $data['slug'] = $slug;
+    }
+    if (array_key_exists('icon', $input)) {
+        $icon = Security::cleanString($input['icon'] ?? '', 50);
+        if ($icon !== '' && !preg_match('/^[a-z0-9\-]+$/', $icon)) {
+            $icon = '';
+        }
+        $data['icon'] = $icon !== '' ? $icon : 'category';
+    }
+    if (array_key_exists('sort_order', $input)) {
+        $data['sort_order'] = max(0, Security::int($input['sort_order'] ?? 0));
+    }
+    if (array_key_exists('show_count', $input)) {
+        $data['show_count'] = max(1, min(50, Security::int($input['show_count'] ?? 12)));
+    }
+    if (array_key_exists('is_show', $input)) {
+        $data['is_show'] = (int)$input['is_show'] === 1 ? 1 : 0;
+    }
+    if (array_key_exists('seo_title', $input)) {
+        $data['seo_title'] = Security::cleanString($input['seo_title'] ?? '', 200);
+    }
+    if (array_key_exists('seo_desc', $input)) {
+        $data['seo_desc'] = Security::cleanString($input['seo_desc'] ?? '', 200);
+    }
+    if (array_key_exists('fill_sort', $input)) {
+        $data['fill_sort'] = Security::enum($input['fill_sort'] ?? '', ['newest', 'views', 'br'], 'newest');
+    }
+
+    if (empty($data)) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '没有可更新的字段'], 400);
+    }
+
+    $catModel->update($id, $data);
+    api_open_log("[开放API-编辑分类] 分类ID={$id} 更新字段=" . implode(',', array_keys($data)));
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => '更新成功',
+        'id'      => $id,
+        'updated' => array_keys($data),
+    ]);
+}
+
+/**
+ * POST /api/open/category/delete - 删除分类（分类下仍有站点时拒绝）
+ */
+function api_open_category_delete(): void
+{
+    $input = api_json_input();
+    $id    = Security::int($input['id'] ?? 0);
+    if ($id <= 0) {
+        Security::jsonOutput(['success' => false, 'code' => 40001, 'message' => '缺少分类ID参数'], 400);
+    }
+
+    $catModel = new CategoryModel();
+    if (!$catModel->getById($id)) {
+        Security::jsonOutput(['success' => false, 'code' => 40401, 'message' => '分类不存在'], 404);
+    }
+
+    $count = (int)Database::scalar(
+        "SELECT COUNT(*) FROM " . Database::table('sites') . " WHERE category_id = ?",
+        [$id]
+    );
+    if ($count > 0) {
+        Security::jsonOutput([
+            'success' => false,
+            'code'    => 40901,
+            'message' => "分类下仍有 {$count} 个站点，无法删除，请先迁移或删除站点",
+        ], 409);
+    }
+
+    $catModel->delete($id);
+    api_open_log("[开放API-删除分类] 分类ID={$id}");
+
+    Security::jsonOutput([
+        'success' => true,
+        'code'    => 0,
+        'message' => '删除成功',
+        'id'      => $id,
     ]);
 }

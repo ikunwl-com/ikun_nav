@@ -143,6 +143,11 @@ foreach ($categories as $cat) {
           <label>描述</label>
           <textarea id="sDesc" maxlength="500" rows="3" placeholder="简要描述站点功能..."></textarea>
         </div>
+        <div class="form-group">
+          <label>联系邮箱 <span class="required">*</span></label>
+          <input type="email" id="sEmail" maxlength="100" placeholder="请输入邮箱，审核结果将通过此邮箱通知">
+          <div class="form-hint">审核结果将通过此邮箱通知您，请确保邮箱正确</div>
+        </div>
         <div class="form-hint">
           <i class="ti ti-info-circle"></i>
           提交后 <?php if ($submitNeedReview): ?>需要管理员审核通过才会显示<?php else: ?>直接发布<?php endif; ?>
@@ -169,9 +174,14 @@ async function submitSite() {
   const cat = document.getElementById('sCat').value;
   const tags = document.getElementById('sTags').value.trim();
   const desc = document.getElementById('sDesc').value.trim();
+  const email = document.getElementById('sEmail').value.trim();
 
   if (!name || !url || (<?= $submitRequireCat ? 'true' : 'false' ?> && !cat)) {
     msg.innerHTML = '<div class="alert alert-error"><i class="ti ti-alert-circle"></i> 请填写必填项</div>';
+    return;
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    msg.innerHTML = '<div class="alert alert-error"><i class="ti ti-alert-circle"></i> 请输入有效的联系邮箱</div>';
     return;
   }
 
@@ -187,7 +197,7 @@ async function submitSite() {
         'X-CSRF-Token': CSRF_TOKEN
       },
       body: JSON.stringify({
-        name, url, category_id: cat, tags, description: desc,
+        name, url, category_id: cat, tags, description: desc, email,
         br_pc: parseInt(document.getElementById('sBrPc').value) || 0,
         br_mobile: parseInt(document.getElementById('sBrMobile').value) || 0,
         br_360: parseInt(document.getElementById('sBr360').value) || 0,

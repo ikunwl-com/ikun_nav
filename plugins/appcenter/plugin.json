@@ -1,0 +1,10 @@
+{
+    "name": "appcenter",
+    "title": "应用中心",
+    "version": "1.0.0",
+    "author": "懒人导航",
+    "description": "在线应用商店：从你的应用中心服务器拉取插件/主题目录，一键下载、安装与升级。内置后台入口（插件管理 → 应用中心）。",
+    "main_file": "include.php",
+    "hooks": ["admin_sidebar"],
+    "builtin": true
+}

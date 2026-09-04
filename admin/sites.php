@@ -63,7 +63,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $adminId = $_SESSION['admin_id'] ?? '未知';
             $ip = Security::getClientIP();
             if ($id > 0) {
+                // 获取修改前的状态，用于检测 pending→published 的变更
+                $oldSite = Database::queryOne("SELECT status, submit_email FROM " . table('sites') . " WHERE id = ?", [$id]);
                 $siteModel->update($id, $data);
+                // 如果状态从 pending 变为 published，触发审核通过通知
+                if ($oldSite && isset($oldSite['status']) && $oldSite['status'] === 'pending' && $status === 'published') {
+                    Plugin::hook('site_approved', [['id' => $id, 'submit_email' => isset($oldSite['submit_email']) ? $oldSite['submit_email'] : '']]);
+                }
                 Logger::log('admin_site', "编辑站点成功 admin_id={$adminId} IP={$ip} site_id={$id} name={$name} url={$url}");
                 redirect('/admin/sites.php?msg=updated');
             } else {
@@ -359,8 +365,11 @@ function showEditForm($site, $categories, $catModel, $msg) {
       <div class="form-group">
         <label>状态</label>
         <select class="form-select" name="status">
-          <?php foreach (['pending'=>'待审核','published'=>'已发布','rejected'=>'已拒绝','offline'=>'已下线'] as $k => $v): ?>
-          <option value="<?= $k ?>" <?= ($isEdit && $site['status'] === $k) ? 'selected' : '' ?>><?= $v ?></option>
+          <?php
+          // 后台新增站点默认「已发布」，不再默认进入待审核队列（编辑时保持原状态）
+          $siteDefaultStatus = $isEdit ? ($site['status'] ?? 'pending') : 'published';
+          foreach (['published'=>'已发布','pending'=>'待审核','rejected'=>'已拒绝','offline'=>'已下线'] as $k => $v): ?>
+          <option value="<?= $k ?>" <?= $siteDefaultStatus === $k ? 'selected' : '' ?>><?= $v ?></option>
           <?php endforeach; ?>
         </select>
       </div>

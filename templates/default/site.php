@@ -145,7 +145,7 @@ $chartJs = '<script src="/templates/default/js/chart.min.js"></script>';
             </h2>
             <div class="related-grid">
                 <?php foreach ($related as $r): ?>
-                <a href="<?= htmlspecialchars(Rewrite::url('site', ['id' => (int)$r['id'], 'slug' => $r['category_slug'] ?? ''])) ?>" class="related-card">
+                <a href="<?= Theme::eAttr(Theme::url('site', ['id' => (int)$r['id'], 'slug' => $r['category_slug'] ?? ''])) ?>" class="related-card">
                     <div class="related-card-header">
                         <div class="related-card-icon"><?= htmlspecialchars(mb_substr($r['name'] ?? '', 0, 1)) ?></div>
                         <div>

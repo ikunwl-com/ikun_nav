@@ -241,14 +241,10 @@ if ($msg) { adminAlert($msg, $msgType); }
 
               <?php if ($isEnabled): ?>
               <?php
-                // 独立管理页面映射（插件名 => 分发路径）
-                $adminPages = [
-                    'article'    => '/admin/plugin.php?p=article',
-                    'wormhole'   => '/admin/plugin.php?p=wormhole',
-                    'spider'     => '/admin/plugin.php?p=spider',
-                    'friendlink' => '/admin/plugin.php?p=friendlink',
-                ];
-                $adminUrl = $adminPages[$name] ?? null;
+                // 自动检测：插件目录下有 admin.php 就有独立管理页面
+                $adminUrl = file_exists($info['dir'] . '/admin.php')
+                    ? '/admin/plugin.php?p=' . urlencode($name)
+                    : null;
                 // config_tab 优先，否则用插件名
                 $tabKey = $info['config_tab'] ?? $name;
               ?>

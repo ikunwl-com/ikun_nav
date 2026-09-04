@@ -130,6 +130,61 @@ function getMsg($msg) {
     return $map[$msg] ?? $msg;
 }
 
+// ========== 接口清单数据（核心 open/* + 全部插件的 api.php 声明，供使用说明展示） ==========
+$openCoreGroups = [];
+foreach (OpenApi::coreEndpoints() as $openDef) {
+    $openCoreGroups[$openDef['group']][] = $openDef;
+}
+$openPluginGroups = [];
+foreach (OpenApi::allPluginEndpoints() as $openDef) {
+    $openPluginGroups[$openDef['group']][] = $openDef;
+}
+$apiSiteUrl = rtrim(setting('site_url', ''), '/');
+if ($apiSiteUrl === '') {
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $apiSiteUrl = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'your-domain.com');
+}
+
+/**
+ * 方法徽标
+ */
+function openApiMethodBadge(string $method): string
+{
+    $cls = $method === 'GET' ? 'badge-success' : ($method === 'POST' ? 'badge-info' : 'badge-secondary');
+    return '<span class="badge ' . $cls . '">' . Security::e($method) . '</span>';
+}
+
+/**
+ * 根据接口声明的 example 生成 curl 调用示例
+ */
+function openApiCurlExample(array $def, string $siteUrl): string
+{
+    $method  = strtoupper($def['method'] ?? 'GET');
+    $example = (string)($def['example'] ?? '');
+    $path    = $example;
+    $body    = '';
+    $pos     = strpos($example, '  body:');
+    if ($pos !== false) {
+        $path = substr($example, 0, $pos);
+        $body = trim(substr($example, $pos + 7));
+    }
+    // 去掉示例开头的 GET/POST 前缀与两端空白
+    $path = preg_replace('/^(GET|POST|PUT|DELETE)\s+/i', '', $path);
+    $path = trim($path, " /");
+
+    $lines   = [];
+    $lines[] = 'curl -X ' . $method . ' \\';
+    $lines[] = '  -H "X-API-Key: <你的API Key>" \\';
+    if ($method === 'POST') {
+        $lines[] = '  -H "Content-Type: application/json" \\';
+    }
+    $lines[] = '  "' . $siteUrl . '/' . $path . '"';
+    if ($body !== '') {
+        $lines[] = "  -d '" . str_replace("'", "\\'", $body) . "'";
+    }
+    return implode("\n", $lines);
+}
+
 adminHeader('API 密钥管理');
 
 if ($msg) { adminAlert(getMsg($msg), $msgType === 'error' ? 'error' : 'success'); }
@@ -243,38 +298,156 @@ if ($msg) { adminAlert(getMsg($msg), $msgType === 'error' ? 'error' : 'success')
 <!-- 使用说明 -->
 <div class="card">
   <div class="card-header">
-    <span class="card-title"><i class="ti ti-book"></i> API 使用说明</span>
+    <span class="card-title"><i class="ti ti-book"></i> API 使用说明（完整接口清单与对接文档）</span>
   </div>
   <div class="card-body">
-    <h4 style="margin-top:0;">鉴权方式</h4>
-    <p>在请求头中添加 <code>X-API-Key</code>，或在 URL 参数中添加 <code>api_key</code>。</p>
-    <pre>curl -H "X-API-Key: your_api_key" https://your-domain.com/api/open/sites</pre>
 
-    <h4>可用接口</h4>
+    <div class="empty-state" style="padding:14px;text-align:left;background:#f8f9fa;border-radius:6px;margin-bottom:16px;">
+      <p style="margin:0;color:#333;font-size:13px;line-height:1.8;">
+        ✅ 开放 API 统一以 <code>open/</code> 开头，必须携带 API Key。除查询外，已提供
+        <strong>发布（open/submit）、编辑（open/site/update）、删除（open/site/delete）以及分类的新增/编辑/删除</strong>，
+        App、小程序、前台自定义提交页都可直接调用，无需 CSRF。
+        <br>✅ 内置插件（文章 / 虫洞联盟 / 友情链接 / 蜘蛛来访）在对应插件<strong>启用后</strong>，
+        其 <code>open/插件名/*</code> 接口会自动注册并出现在下方清单与示例中；停用后自动失效。
+        <br>📄 完整对接文档（可直接发给开发方）：<code>data/docs/api-guide.md</code>（在线版文档第六章 6.1 同步更新）。
+      </p>
+    </div>
+
+    <h4 style="margin-top:0;">1. 鉴权方式</h4>
+    <p>请求头 <code>X-API-Key</code>，或 URL 参数 <code>api_key</code>，或 POST JSON 中的 <code>api_key</code> 字段（三选一）。</p>
+    <pre>curl -H "X-API-Key: &lt;你的API Key&gt;" "<?= Security::e($apiSiteUrl) ?>/api/open/sites?page=1&amp;limit=20"</pre>
+
+    <h4>2. 请求与响应约定</h4>
     <ul>
-      <li><code>GET /api/open/sites</code> - 获取站点列表（支持 category、page、limit、sort 参数）</li>
-      <li><code>GET /api/open/site?id={id}</code> - 获取站点详情</li>
-      <li><code>GET /api/open/rank?type=views</code> - 获取排行榜（支持 views、clicks、br_pc、br_mobile、newest 类型）</li>
-      <li><code>GET /api/open/categories</code> - 获取分类列表</li>
-      <li><code>GET /api/open/search?q=keyword</code> - 搜索站点</li>
-      <li><code>GET /api/open/stats</code> - 获取站点统计信息</li>
+      <li>接口地址：<code><?= Security::e($apiSiteUrl) ?>/api/{endpoint}</code>（伪静态 /api/{endpoint} 亦可），端点形如 <code>open/sites</code></li>
+      <li>GET 接口用 URL 参数；POST 接口用 JSON 请求体（<code>Content-Type: application/json</code>），编辑类接口支持部分更新（传哪些字段改哪些）</li>
+      <li>成功响应：<code>{success:true, code:0, message:"ok", data:{...}}</code>；失败响应：<code>{success:false, code:错误码, message:"原因"}</code></li>
+      <li>列表类接口返回分页结构 <code>data.list / data.total / data.page / data.limit / data.total_pages</code></li>
+      <li>API Key 视为受信凭证，写接口可操作任意站点（等同后台能力），请只把 Key 交给可信的开发方</li>
     </ul>
 
-    <h4>限流响应头</h4>
+    <h4>3. 限流响应头</h4>
     <ul>
       <li><code>X-RateLimit-Limit</code> - 当前周期限制次数</li>
       <li><code>X-RateLimit-Remaining</code> - 当前周期剩余次数</li>
       <li><code>X-RateLimit-Reset</code> - 限流重置时间戳</li>
     </ul>
 
-    <h4>错误码说明</h4>
+    <h4>4. 错误码说明</h4>
     <ul>
       <li><code>40101</code> - 缺少 API Key</li>
       <li><code>40102</code> - API Key 无效或已过期</li>
       <li><code>42901</code> - 调用频率超出限制</li>
-      <li><code>40401</code> - 资源不存在</li>
       <li><code>40001</code> - 参数错误</li>
+      <li><code>40301</code> - 接口所属插件未启用（启用插件后即可调用）</li>
+      <li><code>40401</code> - 资源不存在</li>
+      <li><code>40901</code> - 冲突（如分类下仍有站点无法删除）</li>
     </ul>
+
+    <h4>5. 完整接口清单</h4>
+    <p class="text-muted">核心接口覆盖查询 / 发布 / 编辑 / 删除 / 分类管理；内置插件（文章、虫洞联盟、友情链接、蜘蛛来访等）的接口随插件启用状态自动出现在下方（见「插件状态」列，未启用插件在后台启用后自动生效）。</p>
+
+    <?php foreach ($openCoreGroups as $group => $defs): ?>
+    <h5 class="doc-group"><?= Security::e($group) ?></h5>
+    <table class="data-table">
+      <thead>
+        <tr><th style="width:220px;">端点</th><th style="width:70px;">方法</th><th>说明</th><th>参数 / JSON 请求体</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach ($defs as $def): ?>
+        <tr>
+          <td><code><?= Security::e($def['endpoint']) ?></code></td>
+          <td><?= openApiMethodBadge($def['method']) ?></td>
+          <td><?= Security::e($def['desc'] ?? '') ?></td>
+          <td class="text-muted" style="font-size:12px;"><?= Security::e($def['params'] ?? '') ?></td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endforeach; ?>
+
+    <?php if (empty($openPluginGroups)): ?>
+    <p class="text-muted">尚未发现插件接口声明（plugins/*/api.php）。启用文章 / 虫洞联盟 / 友情链接 / 蜘蛛来访等内置插件后，其接口会自动出现在此处。</p>
+    <?php else: foreach ($openPluginGroups as $group => $defs): ?>
+    <h5 class="doc-group"><?= Security::e($group) ?></h5>
+    <table class="data-table">
+      <thead>
+        <tr><th style="width:220px;">端点</th><th style="width:70px;">方法</th><th>说明</th><th>参数 / JSON 请求体</th><th style="width:150px;">插件状态</th></tr>
+      </thead>
+      <tbody>
+        <?php foreach ($defs as $def): ?>
+        <tr>
+          <td><code><?= Security::e($def['endpoint']) ?></code></td>
+          <td><?= openApiMethodBadge($def['method']) ?></td>
+          <td><?= Security::e($def['desc'] ?? '') ?></td>
+          <td class="text-muted" style="font-size:12px;"><?= Security::e($def['params'] ?? '') ?></td>
+          <td>
+            <?php if (!empty($def['plugin_enabled'])): ?>
+            <span class="badge badge-success">已启用 · <?= Security::e($def['plugin_title'] ?? $def['plugin']) ?></span>
+            <?php else: ?>
+            <span class="badge badge-secondary">未启用 · <?= Security::e($def['plugin_title'] ?? $def['plugin']) ?></span>
+            <?php endif; ?>
+          </td>
+        </tr>
+        <?php endforeach; ?>
+      </tbody>
+    </table>
+    <?php endforeach; endif; ?>
+
+    <h4>6. 调用示例（curl，每个接口一条）</h4>
+    <p class="text-muted">把 <code>&lt;你的API Key&gt;</code> 替换为上方列表中的完整 Key。POST 接口示例已含 JSON 请求体。</p>
+    <?php
+    $curlAll = [];
+    foreach ($openCoreGroups as $group => $defs) { foreach ($defs as $def) { $curlAll[] = ['def' => $def, 'group' => $group]; } }
+    foreach ($openPluginGroups as $group => $defs) { foreach ($defs as $def) { $curlAll[] = ['def' => $def, 'group' => $group]; } }
+    foreach ($curlAll as $curlItem):
+        $curlDef = $curlItem['def'];
+    ?>
+    <details class="apidoc">
+      <summary>
+        <code><?= Security::e(strtoupper($curlDef['method'])) ?></code>
+        <code>/api/<?= Security::e($curlDef['endpoint']) ?></code>
+        <?= Security::e($curlDef['title'] ?? '') ?>
+        <?php if (isset($curlDef['plugin']) && empty($curlDef['plugin_enabled'])): ?>
+        <span class="badge badge-secondary">插件未启用</span>
+        <?php endif; ?>
+      </summary>
+      <pre><?= Security::e(openApiCurlExample($curlDef, $apiSiteUrl)) ?></pre>
+    </details>
+    <?php endforeach; ?>
+
+    <h4>7. 常见对接场景</h4>
+    <ul>
+      <li><strong>App / 小程序读数据</strong>：<code>open/sites</code>、<code>open/site</code>、<code>open/site/related</code>、<code>open/featured</code>、<code>open/rank</code>、<code>open/search</code>、<code>open/categories</code>、<code>open/stats</code>，以及启用插件后的文章 / 虫洞 / 友链 / 蜘蛛查询接口</li>
+      <li><strong>App / 小程序 / 合作方直接发布与管理</strong>：<code>open/submit</code> 发布，<code>open/site/update</code> 编辑，<code>open/site/delete</code> 删除，<code>open/category/create|update|delete</code> 维护分类，插件（文章等）发布 / 编辑 / 删除同理</li>
+      <li><strong>前台提交网站</strong>：提交页直接调用 <code>open/submit</code>（无需 CSRF）；提交前可用 <code>open/site/check</code> 检测是否已收录 / 查审核状态</li>
+      <li><strong>收录进度查询</strong>：<code>open/site/check?url=https://example.com</code> 返回 <code>found/status(待审核|已收录)/status_text</code></li>
+    </ul>
+
+    <h4>8. 前端 / 小程序代码示例</h4>
+    <p><strong>浏览器 fetch - 查询</strong></p>
+    <pre>fetch('<?= Security::e($apiSiteUrl) ?>/api/open/sites?page=1&limit=20', {
+  headers: { 'X-API-Key': '&lt;你的API Key&gt;' }
+}).then(r =&gt; r.json()).then(res =&gt; console.log(res));</pre>
+    <p><strong>浏览器 fetch - 发布站点（前台提交页直接用）</strong></p>
+    <pre>fetch('<?= Security::e($apiSiteUrl) ?>/api/open/submit', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-API-Key': '&lt;你的API Key&gt;' },
+  body: JSON.stringify({
+    name: '示例站',
+    url: 'https://example.com',
+    category_id: 1,
+    description: '一句话简介',
+    tags: ['工具', '效率']
+  })
+}).then(r =&gt; r.json()).then(res =&gt; console.log(res));</pre>
+    <p><strong>微信小程序 wx.request - 查询收录状态</strong></p>
+    <pre>wx.request({
+  url: '<?= Security::e($apiSiteUrl) ?>/api/open/site/check',
+  data: { url: 'https://example.com' },
+  header: { 'X-API-Key': '&lt;你的API Key&gt;' },
+  success(res) { console.log(res.data); }
+});</pre>
   </div>
 </div>
 
@@ -426,6 +599,31 @@ code {
     font-size: 48px;
     margin-bottom: 12px;
     display: block;
+}
+.doc-group {
+    margin: 18px 0 8px;
+    padding-left: 8px;
+    border-left: 3px solid #4e73df;
+    color: #333;
+    font-size: 14px;
+}
+details.apidoc {
+    margin: 6px 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px 12px;
+    background: #fff;
+}
+details.apidoc summary {
+    cursor: pointer;
+    font-size: 13px;
+    color: #333;
+}
+details.apidoc summary code {
+    margin-right: 6px;
+}
+details.apidoc pre {
+    margin: 10px 0 4px;
 }
 .text-danger {
     color: #e74c3c;

@@ -1,0 +1,10 @@
+{
+    "name": "demo-plugin",
+    "title": "示例插件",
+    "version": "1.0.0",
+    "author": "懒人导航",
+    "description": "应用中心演示插件：启用后在前台页脚输出一行提示，用于验证「一键安装 / 升级 / 自动启用」全流程。",
+    "main_file": "include.php",
+    "hooks": ["before_footer"],
+    "builtin": false
+}

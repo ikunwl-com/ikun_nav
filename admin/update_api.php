@@ -49,9 +49,16 @@ if (Security::isSessionExpired($sessionTimeout)) {
     exit;
 }
 
-// CSRF 校验
-$csrfToken = $_POST['csrf_token'] ?? '';
-if (!Security::verifyCSRFToken($csrfToken)) {
+// CSRF 校验（更新操作专用：验证但不轮换 Token，避免多步 AJAX 共用同一 Token 失败）
+$csrfToken = isset($_POST['csrf_token']) ? $_POST['csrf_token'] : '';
+$csrfValid = false;
+if (!empty($csrfToken)) {
+    $current  = isset($_SESSION['csrf_token']) ? $_SESSION['csrf_token'] : '';
+    $previous = isset($_SESSION['csrf_token_previous']) ? $_SESSION['csrf_token_previous'] : '';
+    $csrfValid = ($current && hash_equals($current, $csrfToken))
+              || ($previous && hash_equals($previous, $csrfToken));
+}
+if (!$csrfValid) {
     ob_end_clean();
     http_response_code(403);
     header('Content-Type: application/json; charset=utf-8');

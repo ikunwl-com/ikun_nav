@@ -1,16 +1,18 @@
 # 日志系统使用指南
 
-> 懒人导航内置完整的结构化日志系统，用于运维排查、安全审计和数据分析。
+> 懒人导航内置结构化文件日志系统：按天分目录、按频道分文件，可在后台直接开关，用于运维排查、安全审计和数据分析。
 
 ## 目录
 
 1. [日志目录结构](#日志目录结构)
 2. [日志频道清单](#日志频道清单)
-3. [日志开关配置](#日志开关配置)
-4. [如何在代码中写日志](#如何在代码中写日志)
-5. [日志文件格式](#日志文件格式)
-6. [查看日志的方法](#查看日志的方法)
-7. [日志清理策略](#日志清理策略)
+3. [开关配置（后台界面）](#开关配置后台界面)
+4. [开关优先级与直接 SQL 修改](#开关优先级与直接-sql-修改)
+5. [如何在代码中写日志](#如何在代码中写日志)
+6. [日志文件格式](#日志文件格式)
+7. [查看日志的方法](#查看日志的方法)
+8. [日志清理策略](#日志清理策略)
+9. [常见问题](#常见问题)
 
 ---
 
@@ -34,130 +36,90 @@ data/logs/
 
 ## 日志频道清单
 
-### 友链自动收录频道
-
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `autolink` | 友链自动收录全流程 | 开启 |
-
-**日志内容示例：**
-
-```
-[09:23:15] [fetch_failed] 抓取失败：http://bbs.ikunwl.com/（超时5秒） IP=192.168.1.1
-[09:23:16] [no_backlink] 未检测到回链：bbs.ikunwl.com（首页不含 site.ikunwl.com） IP=192.168.1.1
-[09:23:17] [banned_word] 检测到违禁词"博彩"：bbs.ikunwl.com IP=192.168.1.1
-[09:23:18] [rate_limited] 频率限制：bbs.ikunwl.com 6小时内已处理3次 IP=192.168.1.1
-[09:23:19] [blacklisted] 黑名单域名：bbs.ikunwl.com IP=192.168.1.1
-[09:23:20] [added] 自动收录成功：bbs.ikunwl.com（ID=123）IP=192.168.1.1
-[09:23:21] [duplicated] 重复域名：bbs.ikunwl.com 已在站点列表中 IP=192.168.1.1
-[09:23:22] [invalid_tdk] TDK 抓取失败：bbs.ikunwl.com（标题为空）IP=192.168.1.1
-[09:23:23] [no_referer] 无来路（用户在地址栏直接访问） IP=192.168.1.1
-[09:23:24] [self] 本站来路（导航站内页跳转） IP=192.168.1.1
-[09:23:25] [search_engine] 搜索引擎来路 IP=192.168.1.1
-```
-
-**action 状态码对照表：**
-
-| action | 含义 | 是否记录日志 |
-|--------|------|-------------|
-| `no_referer` | 无 HTTP Referer | 否（静默跳过） |
-| `self` | 本站来路 | 否（静默跳过） |
-| `search_engine` | 搜索引擎来路 | 否（静默跳过） |
-| `disabled` | 功能未开启 | 否（静默跳过） |
-| `fetch_failed` | 抓取对方首页失败 | 是 |
-| `no_backlink` | 对方未挂回链 | 是 |
-| `banned_word` | 含违禁词 | 是 |
-| `rate_limited` | 频率限制 | 是 |
-| `blacklisted` | 黑名单域名 | 是 |
-| `added` | 收录成功 | 是 |
-| `duplicated` | 域名已存在 | 是 |
-| `invalid_tdk` | TDK 无效 | 是 |
-| `internal` | 内网地址 | 是 |
-| `ip_blocked` | IP 被全局屏蔽 | 是 |
+> 所有频道默认开启；后台可逐频道关闭（见下）。除内置频道外，代码中可写任意自定义频道，未配置开关的频道默认开启。
 
 ### 虫洞联盟频道
 
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `wormhole_join` | 虫洞联盟加入上报 | 开启 |
-| `wormhole_check` | 虫洞联盟每日检测 | 开启 |
-| `wormhole_model` | 虫洞模型操作 | 开启 |
-| `wormhole_tdk` | TDK 自动采集 | 开启 |
+| 频道名 | 用途 |
+|--------|------|
+| `wormhole_join` | 虫洞上报/加入联盟 |
+| `wormhole_check` | 虫洞每日检测 |
+| `wormhole_model` | 虫洞模型操作 |
+| `wormhole_display` | 联盟成员列表展示 |
+
+### 友链自动收录频道
+
+| 频道名 | 用途 |
+|--------|------|
+| `autolink` | 自动收录全流程（抓取/回链/TDK/收录/拦截原因） |
 
 ### 安全风控频道
 
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `security_ratelimit` | 频率限制拦截 | 开启 |
-| `security_csrf` | CSRF 校验失败 | 开启 |
-| `security_referer` | Referer 校验失败 | 开启 |
+| 频道名 | 用途 |
+|--------|------|
+| `security_ratelimit` | 频率限制拦截 |
+| `security_csrf` | CSRF 校验失败 |
+| `security_referer` | Referer 校验失败 |
 
-### API 与跳转频道
+### 跳转与 API 频道
 
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `go_jump` | 跳转请求（go.php） | 开启 |
-| `api_5118` | 5118 权重 API 调用 | 开启 |
-| `api_tdk` | TDK 抓取 API | 开启 |
-| `api_error` | API 错误与异常 | 开启 |
+| 频道名 | 用途 |
+|--------|------|
+| `go_jump` | 跳转请求（go.php） |
+| `api_5118` | 5118 权重 API 调用 |
+| `api_tdk` | TDK 抓取 API |
+| `open_api` | 开放 API（open/*）发布/编辑/删除等调用审计 |
 
 ### 后台管理审计频道
 
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `admin_auth` | 后台登录/登出/改密 | 开启 |
-| `admin_site` | 站点增删改审 | 开启 |
-| `admin_category` | 分类增删改排序 | 开启 |
-| `admin_feature` | 推荐位设置 | 开启 |
-| `admin_blacklist` | 黑名单管理 | 开启 |
-| `admin_setting` | 系统设置修改 | 开启 |
-| `admin_wormhole` | 虫洞管理操作 | 开启 |
+| 频道名 | 用途 |
+|--------|------|
+| `admin_auth` | 后台登录/登出/改密 |
+| `admin_site` | 站点增删改审 |
+| `admin_category` | 分类增删改排序 |
+| `admin_feature` | 推荐位设置 |
+| `admin_blacklist` | 黑名单管理 |
+| `admin_setting` | 系统设置/插件启停修改 |
+| `admin_wormhole` | 虫洞管理操作 |
+| `admin_api_key` | API Key 管理 |
 
-### 数据库频道
+### 系统与数据库频道
 
-| 频道名 | 用途 | 默认开关 |
-|--------|------|----------|
-| `database_error` | SQL 执行失败 | 开启 |
+| 频道名 | 用途 |
+|--------|------|
+| `database_error` | SQL 执行失败（含 SQL 与参数） |
+| `plugin_error` | 插件运行错误 |
+| `plugin_info` | 插件启用建表/加字段/写配置等 |
+| `plugin_uninstall` | 插件卸载记录 |
+| `search_fallback` | 搜索回退（FULLTEXT 不可用时 LIKE） |
 
-## 日志开关配置
+## 开关配置（后台界面）
 
-日志开关存储在数据库 `settings` 表中，后台暂时没有 UI 界面，需要直接修改数据库或在代码中设置。
+日志开关配置项存储在数据库 `settings` 表中，后台已提供完整界面：
 
-### 全局总开关
+**后台 → 基础设置 → 基础信息 → 日志设置**
 
-```sql
-UPDATE settings SET value = '1' WHERE key = 'log_global';   -- 开启所有日志
-UPDATE settings SET value = '0' WHERE key = 'log_global';   -- 关闭所有日志（最高优先级）
-```
+- **日志总开关**（`log_global`）：取消勾选即关闭所有日志写入；关闭时不改动各频道开关状态，重新开启后按原设置生效
+- **频道独立开关**（`log_{channel}`）：总开关勾选后自动展开各频道列表（按功能分组），可逐项单独开启/关闭，默认全部开启
+- 保存后即时生效，无需重启服务
 
-### 频道独立开关
-
-```sql
--- 友链自动收录日志
-UPDATE settings SET value = '1' WHERE key = 'log_autolink';
-
--- 虫洞联盟日志
-UPDATE settings SET value = '1' WHERE key = 'log_wormhole_join';
-UPDATE settings SET value = '1' WHERE key = 'log_wormhole_check';
-
--- 跳转日志
-UPDATE settings SET value = '1' WHERE key = 'log_go_jump';
-
--- 后台审计日志
-UPDATE settings SET value = '1' WHERE key = 'log_admin_site';
-UPDATE settings SET value = '1' WHERE key = 'log_admin_auth';
-
--- 数据库错误日志
-UPDATE settings SET value = '1' WHERE key = 'log_database_error';
-```
-
-### 开关优先级
+## 开关优先级与直接 SQL 修改
 
 ```
 log_global = 0     → 关闭所有日志（无视频道开关）
 log_global = 1     → 按各频道开关控制
 log_{channel} = 1  → 开启该频道
 log_{channel} = 0  → 关闭该频道
+```
+
+如需绕过后台直接修改（例如脚本批量调整）：
+
+```sql
+UPDATE settings SET value = '1' WHERE key = 'log_global';   -- 开启所有日志
+UPDATE settings SET value = '0' WHERE key = 'log_global';   -- 关闭所有日志（最高优先级）
+
+UPDATE settings SET value = '0' WHERE key = 'log_autolink'; -- 单独关闭自动收录日志
+UPDATE settings SET value = '1' WHERE key = 'log_wormhole_join';
 ```
 
 ## 如何在代码中写日志
@@ -184,7 +146,7 @@ Logger::logs('autolink', $logs);
 
 ```php
 if (Logger::isEnabled('autolink')) {
-    // 只有在日志开启时才执行昂贵的日志准备工作
+    // 只有开启时才执行昂贵的日志准备工作
     $detail = $this->buildDetailedLog();
     Logger::log('autolink', $detail);
 }
@@ -193,8 +155,16 @@ if (Logger::isEnabled('autolink')) {
 ### 获取日志文件路径
 
 ```php
-$todayLog = Logger::getLogFile('autolink');          // 今天的日志
+$todayLog = Logger::getLogFile('autolink');                  // 今天的日志
 $yesterdayLog = Logger::getLogFile('autolink', '20260804');  // 指定日期
+```
+
+### 自定义频道
+
+任意字符串均可作为频道名，文件即 `data/logs/YYYYMMDD/{频道名}.log`：
+
+```php
+Logger::log('my_plugin', '执行了某操作，结果=' . $result);
 ```
 
 ## 日志文件格式
@@ -204,6 +174,7 @@ $yesterdayLog = Logger::getLogFile('autolink', '20260804');  // 指定日期
 ```
 
 示例：
+
 ```
 [09:23:15] [added] 自动收录成功：bbs.ikunwl.com（ID=123）IP=192.168.1.1
 [09:24:01] [no_backlink] 未检测到回链：example.com（首页不含 site.ikunwl.com） IP=192.168.1.1
@@ -225,11 +196,11 @@ tail -f data/logs/$(date +%Y%m%d)/autolink.log
 cat data/logs/$(date -d yesterday +%Y%m%d)/autolink.log
 ```
 
-### 方法 2：通过 Web 端（如果开启了 admin 日志查看功能）
+### 方法 2：后台提示
 
-后台管理 → 基础设置 → 友链自动收录 → 查看收录日志
+后台仪表盘的「登录日志」卡片会提示登录审计日志位置（`data/logs/YYYYMMDD/admin_auth.log`），并链接到在线文档。
 
-### 方法 3：PHP 脚本查看
+### 方法 3：PHP 脚本查看（调试用）
 
 ```php
 <?php
@@ -249,7 +220,7 @@ if (file_exists($path)) {
 
 ## 日志清理策略
 
-日志文件会持续增长，建议设置定时清理：
+日志文件会持续增长，建议设置定时清理。
 
 ### 保留 30 天日志
 
@@ -280,20 +251,15 @@ du -sh /www/wwwroot/site.ikunwl.com/data/logs/*/*
 
 ### Q: 自动收录没有日志怎么办？
 
-1. 检查 `log_global` 是否被设为 `0`
-2. 检查 `log_autolink` 是否被设为 `0`
-3. 检查 `data/logs/` 目录是否有写权限
-4. 从外站点击友链进入导航站，等待 2-3 秒后再查看日志
-5. 确保主题的 footer.php 已包含自动收录 JS 代码（参考 `theme-dev.md`）
+1. 检查后台「基础设置 - 基础信息 - 日志设置」中总开关与 `autolink` 频道是否开启
+2. 检查 `data/logs/` 目录是否有写权限
+3. 从外站点击友链进入导航站，等待 2-3 秒后再查看日志
+4. 确认 auto-link 插件已启动，且主题 `footer.php` 调用了 `Plugin::hook('after_footer')`（检测 JS 由插件注入）
 
 ### Q: 日志太多占磁盘怎么办？
 
-设置 cron 自动清理（见上方"日志清理策略"），或关闭非必要频道的日志开关。
+设置 cron 自动清理（见上方「日志清理策略」），或到后台关闭非必要频道的日志开关。
 
 ### Q: 如何单独关闭某个频道的日志？
 
-```sql
-UPDATE settings SET value = '0' WHERE key = 'log_autolink';
-```
-
-不需要重启服务，即时生效。
+后台「基础设置 - 基础信息 - 日志设置」展开频道列表，取消勾选对应频道后保存即可，即时生效，无需重启服务。

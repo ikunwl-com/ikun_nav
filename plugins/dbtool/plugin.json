@@ -1,0 +1,11 @@
+{
+    "name": "dbtool",
+    "title": "数据库备份",
+    "version": "1.0",
+    "author": "懒人导航",
+    "description": "数据库备份与恢复插件：支持一键备份数据库（导出 SQL）、下载备份文件到本地、删除备份；支持从备份文件恢复数据库或上传新的 SQL 文件导入恢复。",
+    "main_file": "include.php",
+    "hooks": ["admin_sidebar"],
+    "builtin": true,
+    "enabled": "0"
+}

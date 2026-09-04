@@ -698,3 +698,230 @@ body.login-page { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   50% { opacity: 0.6; transform: scale(0.85); }
   100% { opacity: 1; transform: scale(1); }
 }
+
+/* ===== 移动端响应式增强 =====
+   说明：本段必须放在文件末尾，利用 CSS 级联规则覆盖前面定义的
+   多列栅格工具类（如 .grid-2 / .grid-4 / .style-823d 等），
+   否则这些类会以更高/相同优先级抵消上面的 @media 降级。 */
+
+/* 侧边栏遮罩层 */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 99;
+}
+
+@media (max-width: 768px) {
+  /* 内容区与卡片间距收窄 */
+  .main-content { min-width: 0; }
+  .content-body { padding: 16px 12px; }
+  .card { padding: 16px; margin-bottom: 16px; }
+  .card-header { flex-wrap: wrap; gap: 8px; }
+
+  /* 顶栏 */
+  .topbar { padding: 0 12px; gap: 10px; }
+  .page-title { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .admin-info { font-size: 12px; }
+
+  /* 侧边栏抽屉：打开时锁定背景滚动 + 显示遮罩 */
+  body.sidebar-collapsed { overflow: hidden; }
+  body.sidebar-collapsed .sidebar-backdrop { display: block; }
+
+  /* 多列栅格统一降为单列 */
+  .grid-2, .grid-3, .grid-2-start, .dual-grid, .dual-grid-2-1,
+  .settings-grid, .featured-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  /* 统计卡片：两列（含被工具类覆盖的变体） */
+  .stat-grid, .stat-grid-5, .style-823d, .mb-2bb3, .mb-af8d {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  .stat-card { padding: 16px; }
+  .stat-card .stat-value { font-size: 22px; }
+
+  /* 蜘蛛插件概览卡片：一排两个（覆盖其内联 minmax(220px) 单列） */
+  .spider-overview-grid { grid-template-columns: repeat(2, 1fr) !important; gap: 12px !important; }
+  .spider-overview-grid > div { padding: 16px !important; }
+
+  /* 权重信息四宫格：两列 */
+  .grid-4 { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+
+  /* 搜索栏：纵向堆叠，输入项占满一行 */
+  .search-bar { flex-direction: column; align-items: stretch; }
+  .search-bar .form-input, .search-bar .form-select { width: 100%; min-width: 0; }
+  .search-bar .btn { justify-content: center; }
+
+  /* 表单控件：16px 字号避免 iOS 聚焦自动放大，同时增大点按区域 */
+  .form-input, .form-select, .form-textarea { font-size: 16px; }
+
+  /* 表格转卡片：标题行 + 元信息网格 + 操作行，固定宽度不横向滚动（配合 adminFooter 写入的 data-label） */
+  .data-table, table.table { display: block; }
+  .data-table thead, table.table thead { display: none; }
+  .data-table tbody, table.table tbody { display: block; }
+  .data-table tbody tr, table.table tbody tr {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    column-gap: 14px;
+    row-gap: 10px;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
+    padding: 14px 16px;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  /* 标题行：整行，名称突出、网址弱化 */
+  .data-table td.td-title, table.table td.td-title {
+    grid-column: 1 / -1;
+    display: block;
+    width: 100%;
+    padding: 0 30px 10px 0 !important;
+    border: none !important;
+    border-bottom: 1px solid #f1f2f4 !important;
+    text-align: left !important;
+  }
+  .data-table td.td-title::before, table.table td.td-title::before { display: none; }
+  .data-table td.td-title .td-value, table.table td.td-title .td-value {
+    font-size: 15px;
+    font-weight: 600;
+    color: #111827;
+    line-height: 1.45;
+  }
+  /* 元信息字段：网格项，标签上、值下 */
+  .data-table td.td-field, table.table td.td-field {
+    display: block;
+    width: 100%;
+    min-width: 0;
+    padding: 0 !important;
+    border: none !important;
+    text-align: left !important;
+  }
+  .data-table td.td-field::before, table.table td.td-field::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    color: #9ca3af;
+    margin-bottom: 2px;
+    line-height: 1.4;
+  }
+  .data-table td.td-field .td-value, table.table td.td-field .td-value {
+    font-size: 13px;
+    color: #1f2937;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  /* 长内容字段（URL/长描述）：整行 */
+  .data-table td.td-wide, table.table td.td-wide { grid-column: 1 / -1; }
+  /* 复选框列：卡片右上角浮动 */
+  .data-table td.td-check, table.table td.td-check {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    width: auto;
+    padding: 0 !important;
+    border: none !important;
+    z-index: 1;
+  }
+  .data-table td.td-check::before, table.table td.td-check::before { display: none; }
+  .data-table td.td-check input, table.table td.td-check input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    margin: 0;
+  }
+  /* 操作行：整行，按钮一排 */
+  .data-table td.td-actions, table.table td.td-actions {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 2px;
+    padding: 10px 0 0 !important;
+    border: none !important;
+    border-top: 1px solid #f1f2f4 !important;
+  }
+  .data-table td.td-actions::before, table.table td.td-actions::before { display: none; }
+  .data-table td.td-actions .btn, table.table td.td-actions .btn { margin: 0; }
+  /* 空状态整行居中显示 */
+  .data-table td[data-empty], table.table td[data-empty] {
+    display: block;
+    grid-column: 1 / -1;
+    border: none !important;
+    padding: 16px 0 !important;
+    text-align: center !important;
+    color: #888;
+  }
+  .data-table td[data-empty]::before, table.table td[data-empty]::before { display: none; }
+
+  /* 批量操作与分页 */
+  .batch-actions { flex-wrap: wrap; }
+  .batch-actions .form-select { flex: 1; min-width: 0; }
+  .pagination { flex-wrap: wrap; }
+
+  /* 30 天趋势图：横向滚动，避免 30 根柱子挤在一起 */
+  .flex-end-p-gap-d6ca { overflow-x: auto; }
+  .flex-end-p-gap-d6ca .flex-center-gap-w-dacb { min-width: 20px; }
+
+  /* 登录页 */
+  body.login-page { padding: 16px; }
+  .login-body { padding: 24px; }
+}
+
+@media (max-width: 480px) {
+  /* 超窄屏：权重四宫格降为单列（统计卡片保持一排两个） */
+  .grid-4 { grid-template-columns: 1fr; }
+  /* 极窄屏隐藏用户名，给标题留空间 */
+  .admin-info { display: none; }
+}
+
+/* ===== 补充：插件后台页面缺失工具类 + 设置页 Tab 修正 ===== */
+
+/* 幽灵按钮（wormhole 等插件页签与分页使用，此前未定义导致按钮无背景、像纯文字） */
+.btn-ghost { background: #f3f4f6; color: var(--text-secondary); border: 1px solid var(--border); }
+.btn-ghost:hover { background: #e5e7eb; }
+
+/* 卡片头布局辅助（文章/友链/蜘蛛等插件页常用，与 .card-header 等价） */
+.flex-between-center { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+
+/* 插件表格 table.table 基础风格，与 .data-table 统一（内联 border 由插件页自带） */
+table.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.table thead th { background: #f8f9fa; font-weight: 600; color: var(--text-secondary); }
+
+/* api_keys 分页 active 态（与 .pagination .current 对齐） */
+.pagination .active { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border-color: transparent; }
+
+/* 设置页 Tab 栏修正：
+   原实现用 margin-bottom:-2px 让 Tab 下边框与容器边框重叠，
+   但 .settings-tabs 设了 overflow-x:auto 后垂直溢出会被一并裁剪，
+   导致选中 Tab 的下划线显示异常。改为每个 Tab 自带下边框。 */
+.settings-tabs {
+  border-bottom: none;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+}
+.settings-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+.settings-tab.active { border-bottom-color: var(--primary); }
+
+/* 移动端：设置页 Tab 收紧间距、隐藏横向滚动条 */
+@media (max-width: 768px) {
+  .settings-tabs { scrollbar-width: none; }
+  .settings-tabs::-webkit-scrollbar { display: none; }
+  .settings-tab { padding: 12px 14px; font-size: 13px; }
+}

@@ -64,7 +64,7 @@ function adminHeader($title = '', $extraCss = '') {
 <meta name="robots" content="noindex,nofollow">
 <title><?= Security::e($title) ?> - <?= Security::e($siteName) ?> 管理后台</title>
 <link rel="stylesheet" href="/assets/css/tabler-icons.css">
-<link rel="stylesheet" href="/assets/css/admin.css">
+<link rel="stylesheet" href="/assets/css/admin.css?v=<?= @filemtime(__DIR__ . '/../assets/css/admin.css') ?>">
 <?= $extraCss ?>
 </head>
 <body>
@@ -159,6 +159,86 @@ function adminFooter($extraJs = '') {
               }
           }
       }).catch(function() { /* 静默失败，不影响用户体验 */ });
+})();
+</script>
+<script>
+// 移动端适配：表格转卡片（自动写入列名）+ 侧边栏遮罩/点击收起
+(function() {
+  // 1. 给有表头的表格每个单元格写入 data-label，配合 CSS 在手机端堆叠成卡片
+  document.querySelectorAll('.data-table, table.table').forEach(function(table) {
+    var thead = table.querySelector('thead');
+    if (!thead) return; // 无表头的键值表（如系统信息、Sitemap 状态）本身很窄，保持原样
+
+    var headers = [];
+    thead.querySelectorAll('th').forEach(function(th) {
+      headers.push((th.textContent || '').trim().replace(/\s+/g, ' '));
+    });
+
+    table.querySelectorAll('tbody tr').forEach(function(tr) {
+      var tds = tr.querySelectorAll('td');
+      // 空状态整行（单个 td 且 colspan 跨多列）标记后原样居中显示
+      if (tds.length === 1 && parseInt(tds[0].getAttribute('colspan') || '1', 10) > 1) {
+        tds[0].setAttribute('data-empty', '1');
+        return;
+      }
+      var idx = 0;
+      var titleFound = false;
+      tds.forEach(function(td) {
+        var span = parseInt(td.getAttribute('colspan') || '1', 10);
+        var header = headers[idx] || '';
+        idx += span;
+
+        // 复选框列：卡片右上角浮动，不显示标签
+        var check = td.querySelector('input[type="checkbox"]');
+        if (check && (td.textContent || '').trim() === '') {
+          td.classList.add('td-check');
+          return;
+        }
+        // 操作列：卡片底部按钮行，不显示标签
+        var isLast = td === tds[tds.length - 1];
+        if (td.classList.contains('actions') || (isLast && td.querySelector('button, form, a.btn'))) {
+          td.classList.add('td-actions');
+          return;
+        }
+        // 标题列：第一个有实质文本（且非纯数字）的单元格，整行展示
+        var text = (td.textContent || '').trim();
+        if (!titleFound && text.length >= 2 && !/^\d+$/.test(text)) {
+          td.classList.add('td-title');
+          titleFound = true;
+        } else {
+          td.classList.add('td-field');
+          // 长内容（如 URL、长描述）占整行
+          if (text.length > 24) td.classList.add('td-wide');
+        }
+        // 内容包一层，便于布局
+        var value = document.createElement('div');
+        value.className = 'td-value';
+        while (td.firstChild) value.appendChild(td.firstChild);
+        td.appendChild(value);
+        td.setAttribute('data-label', header);
+      });
+    });
+  });
+
+  // 2. 侧边栏遮罩层
+  var backdrop = document.createElement('div');
+  backdrop.className = 'sidebar-backdrop';
+  document.body.appendChild(backdrop);
+
+  function closeSidebar() {
+    document.body.classList.remove('sidebar-collapsed');
+  }
+  backdrop.addEventListener('click', closeSidebar);
+
+  // 点击侧边栏中的链接后自动收起（退出登录按钮除外）
+  document.querySelectorAll('.sidebar a.nav-item').forEach(function(link) {
+    link.addEventListener('click', closeSidebar);
+  });
+
+  // ESC 键关闭侧边栏
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeSidebar();
+  });
 })();
 </script>
 </body>

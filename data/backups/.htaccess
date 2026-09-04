@@ -1,0 +1,8 @@
+# 禁止直接访问此目录下的所有文件
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^ - [F,L]
+</IfModule>
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>
