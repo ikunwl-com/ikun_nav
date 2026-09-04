@@ -217,9 +217,11 @@ body.login-page { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 .settings-tab.active { color: #667eea; border-bottom-color: #667eea; font-weight: 600; }
 .theme-item { display: flex; align-items: center; gap: 16px; padding: 16px; border: 2px solid var(--border, #e0e0e0); border-radius: 12px; margin-bottom: 12px; cursor: pointer; transition: all 0.2s; }
 .theme-item:hover { border-color: #667eea; }
-.theme-item.active { border-color: #667eea; background: rgba(102,126,234,0.04); }
-.theme-item input { display: none; }
+.theme-item.active { border-color: #667eea; background: rgba(102,126,234,0.04); cursor: default; }
 .theme-screenshot { width: 120px; height: 80px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #999; font-size: 12px; flex-shrink: 0; }
+.theme-info { flex: 1; min-width: 0; }
+.theme-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+.btn[disabled], .btn[disabled]:hover { opacity: 0.65; cursor: default; transform: none; box-shadow: none; }
 
 /* ===== 工具类 ===== */
 .d-none { display: none !important; }

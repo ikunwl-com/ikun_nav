@@ -26,6 +26,9 @@ if (!defined('APP_VERSION') || !class_exists('Database')) {
 
 // ========== 钩子注册：仅在插件启用时执行 ==========
 if (Plugin::isEnabled('appcenter')) {
+    // 引入共享函数库：安装来源标记（官方/第三方/自定义）需供「插件管理 / 主题管理」页面读取
+    require_once __DIR__ . '/lib.php';
+
     // 后台侧边栏：应用中心入口
     Plugin::registerHook('admin_sidebar', function () {
         $cls = ($GLOBALS['currentPage'] ?? '') === 'appcenter' ? 'active' : '';

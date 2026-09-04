@@ -88,32 +88,30 @@ switch ($action) {
     // ===== 读取目录（页面加载用，读本地缓存） =====
     case 'list':
         $rows = appcenter_rows();
-        $result = [
+        $result = array_merge([
             'success'      => true,
             'message'      => '',
-            'server_set'   => appcenter_server_url() !== '',
             'rows'         => $rows['rows'],
             'fetched_at'   => $rows['fetched_at'],
             'source'       => $rows['source'],
             'auto_enable'  => appcenter_auto_enable(),
             'app_version'  => (defined('APP_VERSION') ? APP_VERSION : '1.0.0'),
-        ];
+        ], appcenter_server_info());
         break;
 
     // ===== 刷新目录（强制拉取服务器并更新缓存） =====
     case 'refresh':
         $fetch = appcenter_fetch_catalog();
         $rows  = appcenter_rows();
-        $result = [
+        $result = array_merge([
             'success'      => $fetch['success'],
             'message'      => $fetch['message'],
-            'server_set'   => appcenter_server_url() !== '',
             'rows'         => $rows['rows'],
             'fetched_at'   => $rows['fetched_at'],
             'source'       => $rows['source'],
             'auto_enable'  => appcenter_auto_enable(),
             'app_version'  => (defined('APP_VERSION') ? APP_VERSION : '1.0.0'),
-        ];
+        ], appcenter_server_info());
         break;
 
     // ===== 安装 / 升级（id 必须存在于已拉取的目录缓存） =====
@@ -126,19 +124,27 @@ switch ($action) {
         $result = appcenter_install($itemId);
         break;
 
-    // ===== 保存设置 =====
+    // ===== 保存设置（预设服务器 + 自定义，自定义非空则优先） =====
     case 'save_config':
-        $serverUrl  = Security::cleanString((string)($_POST['server_url'] ?? ''), 500);
+        $preset     = Security::cleanString((string)($_POST['preset'] ?? ''), 20);
+        $customUrl  = Security::cleanString((string)($_POST['custom_url'] ?? ''), 500);
         $dlHosts    = Security::cleanString((string)($_POST['download_hosts'] ?? ''), 1000);
         $autoEnable = ($_POST['auto_enable'] ?? '') === '1';
+        $tlsLoose   = ($_POST['tls_loose'] ?? '') === '1';
 
-        // 校验服务器地址（留空 = 停用应用中心）
-        if ($serverUrl !== '') {
-            [$ok, $reason] = appcenter_check_server($serverUrl);
+        // 预设 key 白名单
+        if (!in_array($preset, ['official', 'third'], true)) {
+            $result = ['success' => false, 'message' => '预设服务器参数非法'];
+            break;
+        }
+        // 自定义地址（非空才校验；留空 = 使用勾选的预设）
+        if ($customUrl !== '') {
+            [$ok, $reason] = appcenter_check_server($customUrl);
             if (!$ok) {
-                $result = ['success' => false, 'message' => $reason];
+                $result = ['success' => false, 'message' => '自定义地址不合法：' . $reason];
                 break;
             }
+            $customUrl = $reason; // check_server 成功时返回规整后的地址
         }
         // 校验白名单域名（逐个，逗号/空白分隔）
         $badHosts = [];
@@ -166,26 +172,31 @@ switch ($action) {
         }
         $hostList = array_unique($hostList);
 
-        Plugin::setConfig('appcenter', 'server_url', rtrim($serverUrl, '/'));
+        Plugin::setConfig('appcenter', 'preset', $preset);
+        Plugin::setConfig('appcenter', 'custom_url', $customUrl);
+        Plugin::setConfig('appcenter', 'server_url', '');   // 清空旧版单地址字段（已迁移到 custom_url）
         Plugin::setConfig('appcenter', 'download_hosts', implode(',', $hostList));
         Plugin::setConfig('appcenter', 'auto_enable', $autoEnable ? '1' : '0');
+        Plugin::setConfig('appcenter', 'tls_loose', $tlsLoose ? '1' : '0');
 
-        // 服务器地址变更后强制丢弃旧目录缓存
+        // 服务器变更后强制丢弃旧目录缓存
         $cacheFile = appcenter_cache_file();
         if (is_file($cacheFile)) {
             @unlink($cacheFile);
         }
 
         $admin = isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : '?';
-        appcenter_log('保存应用中心设置 admin=' . $admin . ' server=' . rtrim($serverUrl, '/')
-            . ' auto_enable=' . ($autoEnable ? '1' : '0'));
+        appcenter_log('保存应用中心设置 admin=' . $admin
+            . ' preset=' . $preset
+            . ' custom=' . ($customUrl !== '' ? $customUrl : '-')
+            . ' auto_enable=' . ($autoEnable ? '1' : '0')
+            . ' tls_loose=' . ($tlsLoose ? '1' : '0'));
 
-        $result = [
+        $result = array_merge([
             'success' => true,
-            'message' => '设置已保存（目录缓存已重置，请点击“刷新目录”）',
-            'server_url' => rtrim($serverUrl, '/'),
+            'message' => '设置已保存：当前生效 ' . appcenter_server_label() . '，正在拉取目录…',
             'auto_enable' => $autoEnable,
-        ];
+        ], appcenter_server_info());
         break;
 
     default:

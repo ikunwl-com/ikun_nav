@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // 环境检查
 $envCheck = [
-    'PHP 版本 >= 7.1' => version_compare(PHP_VERSION, '7.1.0', '>='),
+    'PHP 版本 >= 7.4' => version_compare(PHP_VERSION, '7.4.0', '>='),
     'PDO 扩展' => extension_loaded('pdo'),
     'PDO MySQL 驱动' => extension_loaded('pdo_mysql'),
     'mbstring 扩展' => extension_loaded('mbstring'),

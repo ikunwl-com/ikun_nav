@@ -31,6 +31,14 @@ if (!isset($seoKeywords)) $seoKeywords = '';
   setTimeout(show,600);
 })();
 </script>
+<?php
+// 主题自定义 CSS（后台：主题管理 → 当前主题 → 设置 → 自定义CSS）
+$themeCustomCss = Theme::config('custom_css', '');
+if ($themeCustomCss !== '') {
+    // 转义 </style 防止提前闭合样式块，其余内容原样输出
+    echo '<style>' . str_ireplace('</style', '<\\/style', $themeCustomCss) . '</style>' . "\n";
+}
+?>
 </head>
 <body>
 <?php Plugin::hook('after_header'); ?>

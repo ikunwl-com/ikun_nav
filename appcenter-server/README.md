@@ -80,7 +80,14 @@ https://apps.example.com/appcenter/
    并自行实现 list.php 返回静态地址（协议不变）；
 5. **可选授权分发**：客户端请求 `list.php` 会自动携带 `X-Site-Url` 请求头，
    可在此校验站点域名白名单，非白名单返回空目录即可；
-6. 请全程使用 HTTPS；本目录无需数据库，备份 = 复制整个目录。
+6. **apps/ 目录禁止执行 PHP**：已随包提供 `apps/.htaccess`（Apache 自动生效，禁止执行任何 PHP、
+   关闭目录列表）；**Nginx 用户请手动添加**（路径按实际部署位置调整）：
+   ```nginx
+   location ~ ^/appcenter-server/apps/.*\.php$ { deny all; }
+   location ~ ^/appcenter-server/apps/ { deny all; }  # 可选：整个 apps 目录都不允许直接访问
+   ```
+   扩展源码只应通过 `list.php`（目录）与 `download.php`（打包下载）对外提供；
+7. 请全程使用 HTTPS；本目录无需数据库，备份 = 复制整个目录。
 
 ## 五、常用命令（可选）
 

@@ -81,6 +81,10 @@ $iterator = new RecursiveIteratorIterator(
 );
 foreach ($iterator as $fileInfo) {
     $rel = str_replace('\\', '/', substr($fileInfo->getPathname(), strlen($extDir) + 1));
+    // 跳过隐藏文件/目录（.git、.DS_Store、.htaccess 等），避免把仓库元数据/机密打进安装包
+    if (preg_match('#(^|/)\.#', $rel)) {
+        continue;
+    }
     if ($fileInfo->isDir()) {
         if (basename($fileInfo->getPathname()) === '__MACOSX') {
             continue;

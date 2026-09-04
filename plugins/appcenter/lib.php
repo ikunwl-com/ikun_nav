@@ -37,6 +37,17 @@ function appcenter_data_dir(?string $sub = null): string
             @mkdir($d, 0755, true);
         }
     }
+    // Apache 防护：禁止 Web 直接访问本目录
+    // （目录内含升级备份的插件代码、解压临时文件、下载包，PHP 被直访执行后果严重）
+    // Nginx 用户需在站点配置中对 /data/appcenter/ 加 deny，见插件 README 安全说明
+    $htaccess = $base . '/.htaccess';
+    if (!is_file($htaccess)) {
+        @file_put_contents($htaccess,
+            "# 禁止直接访问此目录下的所有文件（应用中心数据：备份/临时解压/下载包）\n"
+            . "<IfModule mod_rewrite.c>\n    RewriteEngine On\n    RewriteRule ^ - [F,L]\n</IfModule>\n"
+            . "<IfModule mod_autoindex.c>\n    Options -Indexes\n</IfModule>\n",
+            LOCK_EX);
+    }
     if ($sub !== null) {
         $sub = trim($sub, '/');
         if ($sub !== '') {
@@ -64,16 +75,178 @@ function appcenter_log(string $msg): void
 
 // ==================== 配置读取 ====================
 
-/** 应用中心服务器基地址（其后会拼接 /list.php） */
+/** 预设服务器表（key => ['label','url']） */
+function appcenter_preset_urls(): array
+{
+    return [
+        'official' => ['label' => '官方服务器', 'url' => 'https://site.ikunwl.com/appcenter-server'],
+        'third'    => ['label' => '第三方服务器', 'url' => 'https://www.92wl.com/appcenter-server'],
+    ];
+}
+
+/** 当前勾选的预设 key（official / third） */
+function appcenter_preset(): string
+{
+    $p = (string)Plugin::config('appcenter', 'preset', 'official');
+    return in_array($p, ['official', 'third'], true) ? $p : 'official';
+}
+
+/** 自定义服务器地址（非空时优先于预设使用） */
+function appcenter_custom_url(): string
+{
+    $custom = trim((string)Plugin::config('appcenter', 'custom_url', ''));
+    if ($custom !== '') {
+        return $custom;
+    }
+    // 兼容旧版「单一服务器地址」字段：曾保存的地址视为自定义地址
+    return trim((string)Plugin::config('appcenter', 'server_url', ''));
+}
+
+/** 生效中的服务器基地址（自定义优先，否则用勾选的预设；其后会拼接 /list.php） */
 function appcenter_server_url(): string
 {
-    return trim((string)Plugin::config('appcenter', 'server_url', ''));
+    $custom = appcenter_custom_url();
+    if ($custom !== '') {
+        return $custom;
+    }
+    $presets = appcenter_preset_urls();
+    return $presets[appcenter_preset()]['url'] ?? '';
+}
+
+/** 生效服务器的来源标签（界面展示用：官方服务器 / 第三方服务器 / 自定义服务器） */
+function appcenter_server_label(): string
+{
+    if (appcenter_custom_url() !== '') {
+        return '自定义服务器';
+    }
+    $presets = appcenter_preset_urls();
+    return $presets[appcenter_preset()]['label'] ?? '';
+}
+
+/** 服务器选择完整状态（页面 / 接口展示用） */
+function appcenter_server_info(): array
+{
+    $presets = [];
+    foreach (appcenter_preset_urls() as $key => $p) {
+        $presets[] = ['key' => $key, 'label' => $p['label'], 'url' => $p['url']];
+    }
+    return [
+        'presets'      => $presets,
+        'preset'       => appcenter_preset(),
+        'custom_url'   => appcenter_custom_url(),
+        'server_url'   => appcenter_server_url(),
+        'server_label' => appcenter_server_label(),
+        'server_set'   => appcenter_server_url() !== '',
+        'tls_loose'    => appcenter_tls_loose(),
+    ];
 }
 
 /** 新插件安装后是否自动启用（升级保持原状态） */
 function appcenter_auto_enable(): bool
 {
     return Plugin::config('appcenter', 'auto_enable', '1') === '1';
+}
+
+/**
+ * 宽松 TLS：证书校验失败仍继续（默认关闭；仅建议用于证书链不完整但可信的第三方服务器）
+ * 开启后存在中间人风险，请谨慎。
+ */
+function appcenter_tls_loose(): bool
+{
+    return Plugin::config('appcenter', 'tls_loose', '0') === '1';
+}
+
+// ==================== 安装来源标记（官方 / 第三方 / 自定义） ====================
+
+/** 当前生效来源的短标签：官方 / 第三方 / 自定义 */
+function appcenter_source_tag(): string
+{
+    $label = appcenter_server_label(); // 官方服务器 / 第三方服务器 / 自定义服务器
+    $tag = str_replace('服务器', '', $label);
+    return in_array($tag, ['官方', '第三方', '自定义'], true) ? $tag : '';
+}
+
+/** 来源记录在 settings 表中的 key（按 类型+id 区分，如 appcenter_origin_plugin_spider） */
+function appcenter_origin_key(string $type, string $id): string
+{
+    return 'appcenter_origin_' . ($type === 'theme' ? 'theme_' : 'plugin_') . $id;
+}
+
+/** 读取某扩展的安装来源标签（''=从未通过应用中心安装） */
+function appcenter_origin(string $type, string $id): string
+{
+    return trim((string)(new SettingsModel())->get(appcenter_origin_key($type, $id), ''));
+}
+
+/** 记录扩展安装来源 */
+function appcenter_origin_set(string $type, string $id, string $label): void
+{
+    if ($label === '') {
+        return;
+    }
+    (new SettingsModel())->set(appcenter_origin_key($type, $id), $label);
+}
+
+/**
+ * 展示用来源标签：
+ *   已记录来源 → 官方 / 第三方 / 自定义；
+ *   未记录但为内置扩展（builtin=true）→ 官方（随程序自带）；
+ *   主题 default → 官方（系统默认主题）；
+ *   其余 → ''
+ */
+function appcenter_display_label(string $type, string $id, bool $builtin = false): string
+{
+    $origin = appcenter_origin($type, $id);
+    if ($origin !== '') {
+        return $origin;
+    }
+    if ($builtin) {
+        return '官方';
+    }
+    if ($type === 'theme' && $id === 'default') {
+        return '官方';
+    }
+    return '';
+}
+
+/**
+ * 自动补记来源（兼容旧版本安装的无来源记录扩展）：
+ * 仅当「目录缓存来源 == 当前生效服务器」且该服务器目录里有已安装的扩展时才补记，
+ * 已有来源记录的扩展不会被覆盖。应用中心自身永远视为官方，不参与补记。
+ */
+function appcenter_backfill_origins(): void
+{
+    $cat = appcenter_read_catalog();
+    if (($cat['source'] ?? '') !== appcenter_server_url()) {
+        return; // 目录与当前生效服务器不一致时不补记（防止标错来源）
+    }
+    $tag = appcenter_source_tag();
+    if ($tag === '') {
+        return;
+    }
+    $changed = 0;
+    foreach ($cat['items'] as $item) {
+        $id   = (string)($item['id'] ?? '');
+        $type = (string)($item['type'] ?? '');
+        if ($id === '' || !in_array($type, ['plugin', 'theme'], true)) {
+            continue;
+        }
+        if ($type === 'plugin' && $id === 'appcenter') {
+            continue; // 应用中心自身为官方自带，不参与来源补记
+        }
+        if (appcenter_origin($type, $id) !== '') {
+            continue; // 已有记录不覆盖
+        }
+        $inst = appcenter_installed($type, $id);
+        if (!$inst['installed']) {
+            continue;
+        }
+        appcenter_origin_set($type, $id, $tag);
+        $changed++;
+    }
+    if ($changed > 0) {
+        appcenter_log('自动补记安装来源 服务器=' . appcenter_server_label() . ' 来源=' . $tag . ' 数量=' . $changed);
+    }
 }
 
 /** 额外允许的下载域名白名单（逗号/空白分隔），默认仅允许服务器同域 */
@@ -233,10 +406,18 @@ function appcenter_fetch_catalog(): array
 
     $url  = $server . '/list.php?_=' . time();
     $resp = appcenter_http_get($url, 20);
-    if ($resp === false) {
-        return ['success' => false, 'message' => '连接应用中心服务器失败，请检查服务器地址与网络'];
+    if (!$resp['ok']) {
+        $detail = $resp['err'] !== '' ? $resp['err'] : '未知错误';
+        appcenter_log('拉取目录失败 url=' . $url . ' -> ' . $detail);
+        // SSL 校验失败时给出可操作的提示（宽松模式默认关闭，需站长显式开启）
+        $hint = '';
+        if (stripos($detail, 'SSL') !== false && !appcenter_tls_loose()) {
+            $hint = ' 提示：若确认该服务器可信但证书链不完整，可在「服务器设置 → 高级选项」开启“宽松 TLS 校验”后重试。';
+        }
+        return ['success' => false, 'message' => '连接应用中心服务器失败：' . $detail
+            . '。请确认该服务器已部署 appcenter-server（能访问到 list.php、apps/ 目录存在）' . $hint];
     }
-    $data = json_decode($resp, true);
+    $data = json_decode($resp['body'], true);
     if (!is_array($data)) {
         return ['success' => false, 'message' => '服务器返回的数据无法解析（不是有效的 JSON）'];
     }
@@ -279,12 +460,15 @@ function appcenter_fetch_catalog(): array
         return ['success' => false, 'message' => '无法写入目录缓存，请检查 data/appcenter 目录写权限'];
     }
 
+    // 目录来源与当前服务器一致时，顺带为旧版本安装的扩展补记来源
+    appcenter_backfill_origins();
+
     appcenter_log('拉取应用目录 服务器=' . $server . ' 条目=' . count($items)
         . ($dropped > 0 ? ' 忽略无效条目=' . $dropped : ''));
     return [
         'success' => true,
         'message' => '目录已更新：' . count($items) . ' 个应用'
-            . ($dropped > 0 ? '（已忽略 ' . $dropped . ' 个无效条目）' : ''),
+            . ($dropped > 0 ? '（已忽略 ' . $dropped . ' 个无效条目，通常为下载地址域名不在白名单或元数据不符）' : ''),
         'count'   => count($items),
         'dropped' => $dropped,
     ];
@@ -352,18 +536,6 @@ function appcenter_read_catalog(): array
         'fetched_at' => (int)($data['fetched_at'] ?? 0),
         'source'     => (string)($data['source'] ?? ''),
     ];
-}
-
-/** 从缓存目录中按 id 查找条目 @return array|null */
-function appcenter_find_item(string $itemId): ?array
-{
-    $cat = appcenter_read_catalog();
-    foreach ($cat['items'] as $item) {
-        if (($item['id'] ?? '') === $itemId) {
-            return $item;
-        }
-    }
-    return null;
 }
 
 // ==================== 本地状态与兼容性 ====================
@@ -448,8 +620,8 @@ function appcenter_row(array $item): array
         $builtinBlock = true;
         $action       = 'blocked';
         $compatOk     = false;
-        $compatReason = '应用中心为系统内置插件，不能通过商店安装或覆盖';
-        $stateLabel   = $local['installed'] ? '系统内置' : '不可安装';
+        $compatReason = '应用中心为系统官方自带功能，不能通过商店安装或覆盖';
+        $stateLabel   = $local['installed'] ? '官方自带' : '不可安装';
     } elseif (!$builtinBlock && !$compatOk && $action !== 'none') {
         $action     = 'blocked';
         $stateLabel = '不兼容';
@@ -458,6 +630,13 @@ function appcenter_row(array $item): array
     $installedTitle = '';
     if ($local['installed'] && $local['title'] !== '' && $local['title'] !== $item['title']) {
         $installedTitle = $local['title'];
+    }
+
+    // 来源标签（官方 / 第三方 / 自定义）：已安装的本地扩展才展示，appcenter 视为官方内置
+    $originLabel = '';
+    if ($local['installed']) {
+        $builtinFlag = ($item['type'] === 'plugin' && $item['id'] === 'appcenter');
+        $originLabel = appcenter_display_label($item['type'], $item['id'], $builtinFlag);
     }
 
     return [
@@ -479,12 +658,16 @@ function appcenter_row(array $item): array
         'state_label'    => $stateLabel,
         'compat_ok'      => $compatOk,
         'compat_reason'  => $compatReason,
+        'origin_label'   => $originLabel,
     ];
 }
 
 /** 组装整个列表响应 */
 function appcenter_rows(): array
 {
+    // 打开/刷新目录时顺带补记来源（仅目录与当前服务器一致且存在缺失记录时才会写入）
+    appcenter_backfill_origins();
+
     $cat = appcenter_read_catalog();
     $rows = [];
     foreach ($cat['items'] as $item) {
@@ -507,14 +690,20 @@ function appcenter_site_url(): string
     return $protocol . '://' . $host;
 }
 
-/** 安全 GET（curl 优先，file_get_contents 兜底；仅允许 http/https，TLS 校验证书） */
-function appcenter_http_get(string $url, int $timeout = 15)
+/**
+ * 安全 GET（curl 优先，file_get_contents 兜底；仅 http/https，TLS 校验证书）
+ * @return array {ok, body, err, code}
+ *   ok=true 时 body 为响应内容；ok=false 时 err 为可读原因、code 为 HTTP 状态码（0=传输层失败）
+ */
+function appcenter_http_get(string $url, int $timeout = 15): array
 {
     if (!preg_match('#^https?://#i', $url)) {
-        return false;
+        return ['ok' => false, 'body' => '', 'err' => '仅支持 http/https 地址', 'code' => 0];
     }
     $siteUrl = appcenter_site_url();
     $ua      = 'LanRenNav-AppCenter/' . (defined('APP_VERSION') ? APP_VERSION : '1.0.0');
+    $errCurl = '';
+    $loose   = appcenter_tls_loose(); // 默认严格校验证书；宽松模式仅用于可信第三方服务器
 
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
@@ -522,32 +711,62 @@ function appcenter_http_get(string $url, int $timeout = 15)
         curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
         curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
         curl_setopt($ch, CURLOPT_TIMEOUT, $timeout);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$loose);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $loose ? 0 : 2);
         curl_setopt($ch, CURLOPT_USERAGENT, $ua);
         curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-Site-Url: ' . $siteUrl]);
-        $result = curl_exec($ch);
-        $code   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $result  = curl_exec($ch);
+        $code    = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $errCurl = (string)curl_error($ch);
         curl_close($ch);
         if ($code === 200 && $result !== false) {
-            return $result;
+            if (strlen((string)$result) <= 6 * 1024 * 1024) {
+                return ['ok' => true, 'body' => (string)$result, 'err' => '', 'code' => 200];
+            }
+            return ['ok' => false, 'body' => '', 'err' => '服务器响应超过 6MB 上限', 'code' => 200];
         }
+    } else {
+        $errCurl = 'curl 扩展不可用（已尝试备用下载方式）';
     }
 
+    // 兜底：file_get_contents（ignore_errors=true 以便读取真实状态码做诊断）
     $ctx = stream_context_create([
         'http' => [
             'timeout'        => $timeout,
             'user_agent'     => $ua,
             'follow_location'=> 1,
             'max_redirects'  => 3,
+            'ignore_errors'  => true,
             'header'         => 'X-Site-Url: ' . $siteUrl . "\r\n",
         ],
         'ssl' => [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
+            'verify_peer'      => !$loose,
+            'verify_peer_name' => !$loose,
         ],
     ]);
     $result = @file_get_contents($url, false, $ctx);
-    return ($result !== false) ? $result : false;
+    $status = 0;
+    if (isset($http_response_header) && is_array($http_response_header)) {
+        foreach ($http_response_header as $line) {
+            if (preg_match('#^HTTP/\S+\s+(\d{3})#i', $line, $m)) {
+                $status = (int)$m[1];
+            }
+        }
+    }
+
+    if ($result === false) {
+        $msg = $status > 0
+            ? 'HTTP ' . $status
+            : ($errCurl !== '' ? $errCurl : '连接失败（DNS / 超时 / TLS 证书不被信任）');
+        return ['ok' => false, 'body' => '', 'err' => $msg, 'code' => $status];
+    }
+    if ($status !== 200) {
+        return ['ok' => false, 'body' => '', 'err' => 'HTTP ' . $status . '（页面返回了非成功状态）', 'code' => $status];
+    }
+    if (strlen((string)$result) > 6 * 1024 * 1024) {
+        return ['ok' => false, 'body' => '', 'err' => '服务器响应超过 6MB 上限', 'code' => 200];
+    }
+    return ['ok' => true, 'body' => (string)$result, 'err' => '', 'code' => 200];
 }
 
 // ==================== 安装包下载 ====================
@@ -564,7 +783,9 @@ function appcenter_download_package(array $item): array
     }
     $host = strtolower((string)parse_url($url, PHP_URL_HOST));
     if (!appcenter_host_allowed($host)) {
-        return [false, '下载地址与服务器不同域且不在白名单中，已拒绝'];
+        $serverHost = strtolower((string)parse_url(appcenter_server_url(), PHP_URL_HOST));
+        return [false, '下载地址域名（' . $host . '）与当前生效服务器（' . $serverHost
+            . '）不同域且不在下载白名单中，已拒绝。若刚切换过服务器请先「刷新目录」；若对方安装包放在 CDN 域名，请到高级选项加入白名单'];
     }
     if (!function_exists('curl_init')) {
         return [false, '服务器缺少 PHP curl 扩展，无法下载安装包（宝塔：PHP设置 → 安装扩展 → curl）'];
@@ -593,22 +814,44 @@ function appcenter_download_package(array $item): array
     curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
     curl_setopt($ch, CURLOPT_MAXREDIRS, 3);
     curl_setopt($ch, CURLOPT_TIMEOUT, 180);
-    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+    $loose = appcenter_tls_loose();
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, !$loose);
+    curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $loose ? 0 : 2);
+    curl_setopt($ch, CURLOPT_MAXFILESIZE, 400 * 1024 * 1024); // 与解压上限匹配，防磁盘写满
     curl_setopt($ch, CURLOPT_USERAGENT, 'LanRenNav-AppCenter/' . (defined('APP_VERSION') ? APP_VERSION : '1.0.0'));
     curl_setopt($ch, CURLOPT_HTTPHEADER, ['X-Site-Url: ' . appcenter_site_url()]);
-    $success = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlErr  = curl_error($ch);
+    $success      = curl_exec($ch);
+    $httpCode     = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $effectiveUrl = (string)curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
+    $curlErr      = curl_error($ch);
     curl_close($ch);
     fclose($fp);
 
     if (!$success || $httpCode !== 200) {
         @unlink($localFile);
-        return [false, 'HTTP ' . $httpCode . '，cURL: ' . $curlErr];
+        $msg = 'HTTP ' . $httpCode . '，cURL: ' . $curlErr . '（下载地址：' . $url . '）';
+        if ($httpCode === 404) {
+            $msg .= '；404 通常表示该服务器缺少 download.php，或 apps/'
+                 . ($item['type'] === 'theme' ? 'themes' : 'plugins') . '/' . $item['id']
+                 . ' 目录不存在/名称不一致，请核对服务器部署';
+        }
+        appcenter_log('安装包下载失败 url=' . $url . ' -> HTTP ' . $httpCode . ' ' . $curlErr);
+        return [false, $msg];
+    }
+    // 重定向（含跨域跳转）结束后，最终地址仍必须落在允许的域名内（防 SSRF / 下载劫持）
+    $effHost = strtolower((string)parse_url($effectiveUrl, PHP_URL_HOST));
+    if ($effHost === '' || !appcenter_host_allowed($effHost)) {
+        @unlink($localFile);
+        appcenter_log('安装包下载被重定向到不允许的地址 url=' . $url . ' -> ' . $effectiveUrl);
+        return [false, '下载被重定向到不允许的地址（' . $effectiveUrl . '），已拒绝'];
     }
     if (filesize($localFile) <= 0) {
         @unlink($localFile);
         return [false, '下载的文件为空'];
+    }
+    if (filesize($localFile) > 400 * 1024 * 1024) {
+        @unlink($localFile);
+        return [false, '下载文件超过 400MB 上限，已拒绝'];
     }
     if ($item['sha256'] !== '' && !appcenter_verify_sha256($localFile, $item['sha256'])) {
         @unlink($localFile);
@@ -871,14 +1114,26 @@ function appcenter_install(string $itemId): array
         return ['success' => false, 'message' => '应用标识非法'];
     }
 
-    $item = appcenter_find_item($itemId);
+    // 目录缓存必须与当前生效服务器一致，防止切换服务器后误装旧服务器的包
+    $catalog = appcenter_read_catalog();
+    if (!empty($catalog['source']) && $catalog['source'] !== appcenter_server_url()) {
+        return ['success' => false, 'message' => '当前目录来自其他服务器（' . $catalog['source']
+            . '），与当前生效服务器不一致，已拒绝操作。请先点击「刷新目录」后再安装/升级'];
+    }
+    $item = null;
+    foreach ($catalog['items'] as $it) {
+        if (($it['id'] ?? '') === $itemId) {
+            $item = $it;
+            break;
+        }
+    }
     if ($item === null) {
         return ['success' => false, 'message' => '目录中不存在该应用，请先刷新目录'];
     }
 
     // 应用中心自身保护
     if ($item['type'] === 'plugin' && $item['id'] === 'appcenter') {
-        return ['success' => false, 'message' => '应用中心为系统内置插件，不能通过商店安装或覆盖'];
+        return ['success' => false, 'message' => '应用中心为系统官方自带功能，不能通过商店安装或覆盖'];
     }
 
     // 兼容性检查
@@ -974,11 +1229,16 @@ function appcenter_install(string $itemId): array
     // 8. 清理多余备份
     appcenter_prune_backups(3);
 
+    // 记录安装来源（官方 / 第三方 / 自定义），供插件管理 / 主题管理 / 应用中心目录展示
+    $originTag = appcenter_source_tag();
+    appcenter_origin_set($item['type'], $item['id'], $originTag);
+
     $admin = isset($_SESSION['admin_id']) ? $_SESSION['admin_id'] : '?';
     appcenter_log('应用中心' . ($mode === 'upgrade' ? '升级' : '安装')
         . ': type=' . $item['type'] . ' id=' . $item['id']
         . ' version=' . $item['version']
         . ($local['version'] !== '' ? ' 原版本=' . $local['version'] : '')
+        . ' 来源=' . ($originTag !== '' ? $originTag : '未知')
         . ' admin=' . $admin . ($enabledNow ? ' 已自动启用' : ''));
 
     $extra = '';

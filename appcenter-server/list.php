@@ -32,9 +32,13 @@ function acsrv_out(array $data): void
     exit;
 }
 
+// 当前访问基地址 = 协议://域名 + 本脚本所在目录（支持部署在二级目录，如 /appcenter-server；
+// 部署在域名根目录时目录部分为空，自动退化为 协议://域名）
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$baseUrl = $scheme . '://' . $host;
+$scriptPath = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? '/'));
+$scriptDir  = rtrim(dirname($scriptPath), '/');
+$baseUrl = $scheme . '://' . $host . $scriptDir;
 
 $appsDir = __DIR__ . '/apps';
 $items   = [];

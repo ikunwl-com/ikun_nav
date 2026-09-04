@@ -182,8 +182,18 @@ if ($msg) { adminAlert($msg, $msgType); }
         <tr>
           <td style="padding:10px;border:1px solid #e9ecef;">
             <strong><?= Security::e($info['title'] ?? $name) ?></strong>
-            <?php if ($info['builtin'] ?? false): ?>
-            <span style="font-size:11px;color:#16a34a;background:#dcfce7;padding:1px 6px;border-radius:3px;margin-left:4px;">内置</span>
+            <?php
+              // 来源标签：应用中心启用时按安装来源显示 官方/第三方/自定义；不可用时回退「内置」
+              $isBuiltin = (bool)($info['builtin'] ?? false);
+              $srcLabel = (function_exists('appcenter_origin') && function_exists('appcenter_display_label'))
+                  ? appcenter_display_label('plugin', $name, $isBuiltin)
+                  : ($isBuiltin ? '内置' : '');
+              if ($srcLabel !== ''):
+                if ($srcLabel === '第三方')      { $badgeColor = '#7c3aed'; $badgeBg = '#ede9fe'; }
+                elseif ($srcLabel === '自定义')  { $badgeColor = '#b45309'; $badgeBg = '#fef3c7'; }
+                else                             { $badgeColor = '#16a34a'; $badgeBg = '#dcfce7'; }
+            ?>
+            <span style="font-size:11px;color:<?= $badgeColor ?>;background:<?= $badgeBg ?>;padding:1px 6px;border-radius:3px;margin-left:4px;"><?= Security::e($srcLabel) ?></span>
             <?php endif; ?>
             <div style="font-size:12px;color:#999;margin-top:2px;"><?= Security::e($name) ?></div>
             <?php if (!empty($dbItems)): ?>

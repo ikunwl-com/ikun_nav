@@ -1,0 +1,13 @@
+# 应用中心 - 扩展源文件目录防护（Apache）
+# apps/ 下存放的是开发者上传的插件/主题源码，禁止任何 PHP 被 Web 直接执行：
+# 扩展只应通过 list.php（目录）与 download.php（打包下载）对外提供。
+# Nginx 用户请参照 appcenter-server/README.md 在站点配置中添加对应 deny 规则。
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "\.(php|php3|php4|php5|php7|phtml|phar)$">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+<IfModule mod_autoindex.c>
+    Options -Indexes
+</IfModule>

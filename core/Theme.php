@@ -183,4 +183,43 @@ class Theme
         extract($allVars, EXTR_SKIP);
         include $path;
     }
+
+    // ========== 主题配置（与插件配置同存储层：settings 表） ==========
+    // 存储 key 前缀：theme_{主题名}_，例如当前主题为 default 时
+    // Theme::config('logo') 对应 settings 表中的 theme_default_logo
+
+    /**
+     * 获取当前主题的配置值
+     * @param string $key 配置键（不带前缀）
+     * @param mixed $default 默认值
+     */
+    public static function config(string $key, $default = null)
+    {
+        $settings = new SettingsModel();
+        return $settings->get('theme_' . self::current() . '_' . $key, $default);
+    }
+
+    /**
+     * 批量保存当前主题的配置
+     * @param array $data 原始键 => 值的关联数组（自动加主题前缀）
+     */
+    public static function setConfig(array $data): void
+    {
+        $settings = new SettingsModel();
+        $prefixed = [];
+        $prefix   = 'theme_' . self::current() . '_';
+        foreach ($data as $key => $value) {
+            $prefixed[$prefix . $key] = (string)$value;
+        }
+        $settings->setMany($prefixed);
+    }
+
+    /**
+     * 判断主题是否自带后台设置页（存在 templates/{主题名}/admin.php）
+     * 存在时后台「主题管理」卡片会显示「设置」入口
+     */
+    public static function hasSettingsPage(string $name): bool
+    {
+        return is_file(self::$baseDir . '/' . $name . '/admin.php');
+    }
 }

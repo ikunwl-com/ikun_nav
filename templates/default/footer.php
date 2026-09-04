@@ -201,5 +201,12 @@ echo Security::cleanHtml($extraHead);
 <?php echo $siteJs; ?>
 
 <?php Plugin::hook('after_footer'); ?>
+<?php
+// 主题自定义统计代码 / HTML（后台：主题管理 → 当前主题 → 设置 → 页脚代码）
+$themeFooterCode = Theme::config('custom_footer_code', '');
+if ($themeFooterCode !== '') {
+    echo Security::cleanHtml((string)$themeFooterCode);
+}
+?>
 </body>
 </html>
